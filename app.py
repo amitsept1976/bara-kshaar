@@ -3,17 +3,23 @@ from config import Config
 from models import db, Remedy
 from sqlalchemy import or_
 
+
 def create_app():
-    app = Flask(__name__)
+    # an explicit static_folder argument makes it easier to reason about
+    app = Flask(__name__, static_folder="static")
     app.config.from_object(Config)
     db.init_app(app)
 
-    @app.before_first_request
-    def create_tables():
+    # database helpers exposed as `flask` CLI commands
+    @app.cli.command("init-db")
+    def init_db():
+        """Create database tables and seed initial data if necessary."""
         db.create_all()
-        seed_if_empty()
+        _seed_if_empty()
+        print("database initialized")
 
-    def seed_if_empty():
+    def _seed_if_empty():
+        # idempotent seeding; safe to run multiple times
         if Remedy.query.first():
             return
         salts = [
@@ -58,6 +64,11 @@ def create_app():
 
     return app
 
+
+# create a global application instance so that the CLI and WSGI servers can
+# import it simply using `from app import app` or by pointing FLASK_APP=app
+app = create_app()
+
 if __name__ == "__main__":
-    app = create_app()
+    # development server with debug enabled
     app.run(debug=True)

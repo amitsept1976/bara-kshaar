@@ -10,7 +10,8 @@
       background: #f7f7f7;
     }
     header {
-      background: url("/templates/12_tsalts.png") center/cover no-repeat;
+      /* the header background is now served from the static folder */
+      background: url("{{ url_for('static', filename='12_tsalts.png') }}") center/cover no-repeat;
       height: 260px;
       display: flex;
       align-items: flex-end;

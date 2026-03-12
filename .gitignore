@@ -1,0 +1,11 @@
+# Python artifacts
+*.pyc
+__pycache__/
+.env
+.venv/
+
+# Local database
+*.db
+
+# VSCode
+.vscode/
