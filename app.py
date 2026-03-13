@@ -12,6 +12,11 @@ def create_app() -> Flask:
     app.config.from_object(Config)
     db.init_app(app)
 
+    # Initialize database tables and seed data on app startup
+    with app.app_context():
+        db.create_all()
+        _seed_database_if_empty()
+
     # Register CLI commands
     _register_cli_commands(app)
 
