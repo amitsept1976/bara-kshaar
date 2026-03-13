@@ -7,11 +7,10 @@
     body {
       font-family: system-ui, sans-serif;
       margin: 0;
-      background: #f7f7f7;
+      background: url("{{ url_for('static', filename='12_tsalts.png') }}") center/contain no-repeat;
+      min-height: 100vh;
     }
     header {
-      /* the header background is now served from the static folder */
-      background: url("{{ url_for('static', filename='12_tsalts.png') }}") center/cover no-repeat;
       height: 260px;
       display: flex;
       align-items: flex-end;
