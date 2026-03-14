@@ -87,6 +87,9 @@ def _register_cli_commands(app: Flask) -> None:
     def update_db():
         """Update database with current seed data, replacing existing remedies."""
         _update_database_from_seeds()
+
+
+def _register_routes(app: Flask) -> None:
     """Register application routes."""
     @app.route("/", methods=["GET"])
     def index():
