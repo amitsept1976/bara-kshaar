@@ -52,7 +52,41 @@ def _seed_database_if_empty() -> None:
     db.session.commit()
 
 
-def _register_routes(app: Flask) -> None:
+def _update_database_from_seeds() -> None:
+    """Update the database with current seed data, replacing all existing remedies."""
+    print(f"Updating database with {len(REMEDY_SEEDS)} remedies from seeds.py...")
+
+    # Clear existing remedies
+    Remedy.query.delete()
+    db.session.commit()
+
+    # Add new remedies from seeds
+    for name, full_name in REMEDY_SEEDS:
+        remedy = Remedy(
+            name=name,
+            full_name=full_name,
+            description=f"Traditional remedy: {full_name}.",
+            keywords=f"{name.lower()} {full_name.lower()}"
+        )
+        db.session.add(remedy)
+
+    db.session.commit()
+    print(f"Successfully updated database with {len(REMEDY_SEEDS)} remedies")
+
+
+def _register_cli_commands(app: Flask) -> None:
+    """Register Flask CLI commands."""
+    @app.cli.command("init-db")
+    def init_db():
+        """Create database tables and seed initial data if necessary."""
+        db.create_all()
+        _seed_database_if_empty()
+        print("Database initialized")
+
+    @app.cli.command("update-db")
+    def update_db():
+        """Update database with current seed data, replacing existing remedies."""
+        _update_database_from_seeds()
     """Register application routes."""
     @app.route("/", methods=["GET"])
     def index():
