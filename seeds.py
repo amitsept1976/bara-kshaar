@@ -29,7 +29,6 @@ REMEDY_SEEDS = [
 (" Acute and chronic Hepatitis","Nat Sulph (Sodium Sulphate)"),
 (" Adults can moan and groan and complain","Calc Phos (Calcium Phosphate)"),
 (" Affects nutrition of the bones and teeth","Calc Phos (Calcium Phosphate)"),
-/workspaces/bara-kshaar/.venv/bin/python /workspaces/bara-kshaar/app.py
 (" Affects respiratory mucous membranes and skin where it causes desquamation","Kali Sulph (Potassium Sulphate)"),
 (" Agaricus) TMJ problems Menstrual Cramps – 30X Mag Phos – Every time she got cramps she used 30X Mag Phos","Mag Phos (Magnesium Phosphate)"),
 (" Aggravated by the full moon- the worms are hatching Grinding of the teeth","Nat Phos (Sodium Phosphate)"),
