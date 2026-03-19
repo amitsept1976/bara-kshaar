@@ -7,7 +7,7 @@
     body {
       font-family: system-ui, sans-serif;
       margin: 0;
-      background: url("{{ url_for('static', filename='12_tsalts.png') }}") center/contain no-repeat;
+      background: url("{{ url_for('static', filename='12_tsalts.png') }}") top center/25% no-repeat;
       min-height: 100vh;
     }
     header {
@@ -46,12 +46,6 @@
       color: #1f4f66;
       font-size: 0.9rem;
       font-weight: 600;
-    }
-    header h1 {
-      margin: 0;
-      background: rgba(255,255,255,0.7);
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
     }
     .container {
       max-width: 800px;
@@ -155,7 +149,6 @@
         <a href="{{ url_for('login') }}">Login</a>
       {% endif %}
     </div>
-    <h1>The 12 Tissue Salts</h1>
   </header>
 
   <div class="container">
