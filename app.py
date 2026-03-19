@@ -6,6 +6,54 @@ from models import db, Remedy
 from seeds import REMEDY_SEEDS
 
 
+def _normalize_prompt(prompt: str) -> str:
+    """Collapse extra whitespace in a prompt pulled from seeds."""
+    return " ".join(prompt.split())
+
+
+def _build_search_prompts(
+    visible_limit: int = 8,
+    suggestion_limit: int = 60,
+) -> tuple[list[str], list[str]]:
+    """Build user-facing search prompts from the seeded symptom phrases."""
+    all_prompts: list[str] = []
+    seen: set[str] = set()
+
+    for prompt, _ in REMEDY_SEEDS:
+        normalized = _normalize_prompt(prompt)
+        if not normalized:
+            continue
+
+        key = normalized.casefold()
+        if key in seen:
+            continue
+
+        seen.add(key)
+        all_prompts.append(normalized)
+
+    visible_prompts = [
+        prompt
+        for prompt in all_prompts
+        if prompt[0].isupper()
+        and len(prompt) <= 40
+        and len(prompt.split()) <= 5
+        and not any(char.isdigit() for char in prompt)
+        and "(" not in prompt
+    ]
+
+    if len(visible_prompts) < visible_limit:
+        for prompt in all_prompts:
+            if prompt not in visible_prompts:
+                visible_prompts.append(prompt)
+            if len(visible_prompts) >= visible_limit:
+                break
+
+    return visible_prompts[:visible_limit], all_prompts[:suggestion_limit]
+
+
+SEARCH_PROMPTS, SEARCH_SUGGESTIONS = _build_search_prompts()
+
+
 def create_app() -> Flask:
     """Create and configure the Flask application."""
     app = Flask(__name__, static_folder="static")
@@ -95,7 +143,13 @@ def _register_routes(app: Flask) -> None:
     def index():
         query = request.args.get("q", "").strip()
         remedies = _search_remedies(query) if query else []
-        return render_template("index.html", query=query, remedies=remedies)
+        return render_template(
+            "index.html",
+            query=query,
+            remedies=remedies,
+            prompt_examples=SEARCH_PROMPTS,
+            prompt_suggestions=SEARCH_SUGGESTIONS,
+        )
 
 
 def _search_remedies(query: str) -> list[Remedy]:

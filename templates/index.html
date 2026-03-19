@@ -34,6 +34,14 @@
       gap: 0.5rem;
       margin-bottom: 1.5rem;
     }
+    .search-panel {
+      background: rgba(255,255,255,0.9);
+      border-radius: 12px;
+      padding: 1rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      backdrop-filter: blur(4px);
+      margin-bottom: 1.5rem;
+    }
     input[type="text"] {
       flex: 1;
       padding: 0.6rem 0.8rem;
@@ -47,6 +55,27 @@
       background: #3b7ea1;
       color: white;
       cursor: pointer;
+    }
+    .prompt-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .prompt-chip {
+      border: 1px solid #b8d2df;
+      background: #eef6fa;
+      color: #24546c;
+      border-radius: 999px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.92rem;
+      line-height: 1.2;
+    }
+    .prompt-chip:hover {
+      background: #dceef7;
+    }
+    .prompt-chip-form {
+      margin: 0;
     }
     .card {
       background: white;
@@ -70,15 +99,33 @@
   </header>
 
   <div class="container">
-    <form method="get" action="/">
-      <input
-        type="text"
-        name="q"
-        placeholder="Describe your ailment (e.g. fatigue, cramps, nerves)…"
-        value="{{ query }}"
-      >
-      <button type="submit">Search</button>
-    </form>
+    <div class="search-panel">
+      <form method="get" action="/">
+        <input
+          type="text"
+          name="q"
+          list="seed-prompts"
+          placeholder="Search with a seeded phrase like Redness or Insomnia"
+          value="{{ query }}"
+        >
+        <button type="submit">Search</button>
+      </form>
+
+      <datalist id="seed-prompts">
+        {% for prompt in prompt_suggestions %}
+          <option value="{{ prompt }}"></option>
+        {% endfor %}
+      </datalist>
+
+      <p class="muted">Try one of the symptom prompts already present in the seed data:</p>
+      <div class="prompt-list">
+        {% for prompt in prompt_examples %}
+          <form class="prompt-chip-form" method="get" action="/">
+            <button class="prompt-chip" type="submit" name="q" value="{{ prompt }}">{{ prompt }}</button>
+          </form>
+        {% endfor %}
+      </div>
+    </div>
 
     {% if query %}
       <p class="muted">
