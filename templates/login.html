@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(160deg, #e8f2f7, #fefcf5);
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 430px;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+      padding: 1.4rem;
+    }
+    h1 {
+      margin: 0 0 1rem;
+      color: #224f66;
+      font-size: 1.4rem;
+    }
+    form {
+      display: grid;
+      gap: 0.8rem;
+    }
+    label {
+      display: grid;
+      gap: 0.35rem;
+      color: #1f3340;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    input {
+      border: 1px solid #bfd2df;
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      font-size: 1rem;
+    }
+    button {
+      border: none;
+      background: #3b7ea1;
+      color: #fff;
+      font-weight: 700;
+      border-radius: 8px;
+      padding: 0.65rem 0.9rem;
+      cursor: pointer;
+    }
+    .links {
+      margin-top: 0.9rem;
+      font-size: 0.95rem;
+    }
+    a {
+      color: #2e6786;
+    }
+    .flash-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1rem;
+    }
+    .flash {
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .flash.success {
+      background: #e8f7ec;
+      border: 1px solid #8dd6a3;
+      color: #1e6d39;
+    }
+    .flash.error {
+      background: #fdeaea;
+      border: 1px solid #f0aaaa;
+      color: #8d2727;
+    }
+  </style>
+</head>
+<body>
+  <main class="auth-card">
+    <h1>Login</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flash-list">
+          {% for category, message in messages %}
+            <li class="flash {{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('login') }}">
+      <label>
+        Username
+        <input type="text" name="username" autocomplete="username" required>
+      </label>
+
+      <label>
+        Password
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+
+      <button type="submit">Login</button>
+    </form>
+
+    <p class="links">Need an account? <a href="{{ url_for('register') }}">Register here</a>.</p>
+    <p class="links"><a href="{{ url_for('index') }}">Back to home</a></p>
+  </main>
+</body>
+</html>

@@ -11,12 +11,41 @@
       min-height: 100vh;
     }
     header {
+      position: relative;
       height: 260px;
       display: flex;
       align-items: flex-end;
       padding: 1.5rem;
       color: #2b2b2b;
       text-shadow: 0 1px 3px rgba(255,255,255,0.8);
+    }
+    .top-nav {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .top-nav a,
+    .top-nav button {
+      border: 1px solid #3b7ea1;
+      background: rgba(255,255,255,0.9);
+      color: #1f4f66;
+      border-radius: 999px;
+      padding: 0.4rem 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .top-nav .greeting {
+      background: rgba(255,255,255,0.9);
+      border-radius: 999px;
+      padding: 0.4rem 0.8rem;
+      color: #1f4f66;
+      font-size: 0.9rem;
+      font-weight: 600;
     }
     header h1 {
       margin: 0;
@@ -91,14 +120,55 @@
       color: #666;
       font-size: 0.9rem;
     }
+    .flash-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1rem;
+    }
+    .flash {
+      padding: 0.7rem 0.9rem;
+      border-radius: 8px;
+      margin-bottom: 0.6rem;
+      font-size: 0.95rem;
+    }
+    .flash.success {
+      background: #e8f7ec;
+      border: 1px solid #8dd6a3;
+      color: #1e6d39;
+    }
+    .flash.error {
+      background: #fdeaea;
+      border: 1px solid #f0aaaa;
+      color: #8d2727;
+    }
   </style>
 </head>
 <body>
   <header>
+    <div class="top-nav">
+      {% if current_user %}
+        <span class="greeting">Hello, {{ current_user.username }}</span>
+        <form method="post" action="{{ url_for('logout') }}">
+          <button type="submit">Logout</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('login') }}">Login</a>
+      {% endif %}
+    </div>
     <h1>The 12 Tissue Salts</h1>
   </header>
 
   <div class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flash-list">
+          {% for category, message in messages %}
+            <li class="flash {{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
     <div class="search-panel">
       <form method="get" action="/">
         <input

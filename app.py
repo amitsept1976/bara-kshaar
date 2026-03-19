@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request
+from flask import Flask, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import or_
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
-from models import db, Remedy
+from models import Remedy, User, db
 from seeds import REMEDY_SEEDS
 
 
@@ -149,7 +150,70 @@ def _register_routes(app: Flask) -> None:
             remedies=remedies,
             prompt_examples=SEARCH_PROMPTS,
             prompt_suggestions=SEARCH_SUGGESTIONS,
+            current_user=_get_current_user(),
         )
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+
+            user = User.query.filter_by(username=username).first() if username else None
+            if not user or not check_password_hash(user.password_hash, password):
+                flash("Invalid username or password.", "error")
+                return render_template("login.html", current_user=_get_current_user()), 401
+
+            session["user_id"] = user.id
+            session["username"] = user.username
+            flash("You are now logged in.", "success")
+            return redirect(url_for("index"))
+
+        return render_template("login.html", current_user=_get_current_user())
+
+    @app.route("/register", methods=["GET", "POST"])
+    def register():
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            email = request.form.get("email", "").strip().lower()
+            password = request.form.get("password", "")
+
+            if not username or not email or not password:
+                flash("Username, email, and password are required.", "error")
+                return render_template("register.html", current_user=_get_current_user()), 400
+
+            if len(password) < 8:
+                flash("Password must be at least 8 characters long.", "error")
+                return render_template("register.html", current_user=_get_current_user()), 400
+
+            if User.query.filter_by(username=username).first():
+                flash("That username is already taken.", "error")
+                return render_template("register.html", current_user=_get_current_user()), 409
+
+            if User.query.filter_by(email=email).first():
+                flash("That email is already registered.", "error")
+                return render_template("register.html", current_user=_get_current_user()), 409
+
+            new_user = User(
+                username=username,
+                email=email,
+                password_hash=generate_password_hash(password),
+            )
+            db.session.add(new_user)
+            db.session.commit()
+
+            session["user_id"] = new_user.id
+            session["username"] = new_user.username
+            flash("Registration successful. Welcome!", "success")
+            return redirect(url_for("index"))
+
+        return render_template("register.html", current_user=_get_current_user())
+
+    @app.route("/logout", methods=["POST"])
+    def logout():
+        session.clear()
+        flash("You have been logged out.", "success")
+        return redirect(url_for("index"))
 
 
 def _search_remedies(query: str) -> list[Remedy]:
@@ -163,6 +227,14 @@ def _search_remedies(query: str) -> list[Remedy]:
             Remedy.keywords.ilike(q),
         )
     ).all()
+
+
+def _get_current_user() -> User | None:
+    """Return the logged-in user from session if present."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    return db.session.get(User, user_id)
 
 
 # Create a global application instance for CLI and WSGI servers
