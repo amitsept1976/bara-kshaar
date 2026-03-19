@@ -657,4 +657,5 @@ REMEDY_SEEDS = [
 ("Old cough in patients whose hands and feet always get cold "," Calc Phos (Calcium Phosphate)"),
 ("Cough caused by bending the neck and touching the throat (glands) "," Ferrum Phos (Ferrum Phosphoricum)"),
 ("While sitting straight "," Nat Mur (Natrum Muriaticum)"),
-("Forceful cough with running nose "," Kali Mur (Potassium Muriaticum)")
+("Forceful cough with running nose "," Kali Mur (Potassium Muriaticum)"),
+]
