@@ -179,15 +179,6 @@
           <option value="{{ prompt }}"></option>
         {% endfor %}
       </datalist>
-
-      <p class="muted">Try one of the symptom prompts already present in the seed data:</p>
-      <div class="prompt-list">
-        {% for prompt in prompt_examples %}
-          <form class="prompt-chip-form" method="get" action="/">
-            <button class="prompt-chip" type="submit" name="q" value="{{ prompt }}">{{ prompt }}</button>
-          </form>
-        {% endfor %}
-      </div>
     </div>
 
     {% if query %}

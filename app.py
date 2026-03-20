@@ -177,21 +177,20 @@ def _register_routes(app: Flask) -> None:
                 flash("Password must be at least 8 characters long.", "error")
                 return render_template("register.html", current_user=_get_current_user()), 400
 
-            if User.query.filter_by(username=username).first():
-                flash("That username is already taken.", "error")
-                return render_template("register.html", current_user=_get_current_user()), 409
-
-            if User.query.filter_by(email=email).first():
-                flash("That email is already registered.", "error")
-                return render_template("register.html", current_user=_get_current_user()), 409
-
-            new_user = User(
-                username=username,
-                email=email,
-                password_hash=generate_password_hash(password),
-            )
-
             try:
+                if User.query.filter_by(username=username).first():
+                    flash("That username is already taken.", "error")
+                    return render_template("register.html", current_user=_get_current_user()), 409
+
+                if User.query.filter_by(email=email).first():
+                    flash("That email is already registered.", "error")
+                    return render_template("register.html", current_user=_get_current_user()), 409
+
+                new_user = User(
+                    username=username,
+                    email=email,
+                    password_hash=generate_password_hash(password),
+                )
                 db.session.add(new_user)
                 db.session.commit()
             except IntegrityError:

@@ -22,6 +22,12 @@ class Config:
         "postgresql://username:password@localhost:5432/remedies_db"
     ))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # pool_pre_ping re-tests connections before use, preventing OperationalError on
+    # Render/Heroku when the app wakes from sleep and the pool has stale connections.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
 
     # a real deployment should override this via an env var or .env file
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
