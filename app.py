@@ -1,4 +1,5 @@
 from flask import Flask, flash, redirect, render_template, request, session, url_for
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import or_
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -189,8 +190,18 @@ def _register_routes(app: Flask) -> None:
                 email=email,
                 password_hash=generate_password_hash(password),
             )
-            db.session.add(new_user)
-            db.session.commit()
+
+            try:
+                db.session.add(new_user)
+                db.session.commit()
+            except IntegrityError:
+                db.session.rollback()
+                flash("That username or email is already in use.", "error")
+                return render_template("register.html", current_user=_get_current_user()), 409
+            except SQLAlchemyError:
+                db.session.rollback()
+                flash("Unable to create account right now. Please try again.", "error")
+                return render_template("register.html", current_user=_get_current_user()), 500
 
             session["user_id"] = new_user.id
             session["username"] = new_user.username
