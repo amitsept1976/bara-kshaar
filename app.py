@@ -75,16 +75,6 @@ def create_app() -> Flask:
     return app
 
 
-def _register_cli_commands(app: Flask) -> None:
-    """Register Flask CLI commands."""
-    @app.cli.command("init-db")
-    def init_db():
-        """Create database tables and seed initial data if necessary."""
-        db.create_all()
-        _seed_database_if_empty()
-        print("Database initialized")
-
-
 def _seed_database_if_empty() -> None:
     """Seed the database with initial remedy data if empty."""
     if Remedy.query.first():

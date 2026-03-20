@@ -551,7 +551,6 @@ REMEDY_SEEDS = [
 (" Confidence issues","Calc Flor (Calcium Floride) "),
 (" Hard Laborious job","Calc Flor (Calcium Floride) "),
 (" thick and lumpy","Calc Sulph (Calcium Sulphate)"),
-(" Thin Calc Phos they grow too fast with not enough stability for the tissues","Calc Phos (Calcium Phosphate)"),
 (" This gives us the essence of the whole remedy – The recreation of the bone isn’t happening","Calc Phos (Calcium Phosphate)"),
 (" this is often the least used tissue salt","Calc Sulph (Calcium Sulphate)"),
 (" This remedy along with calc phos can fix the metabolic problems in children","Calc Flor (Calcium Floride) "),
