@@ -5,7 +5,7 @@ from sqlalchemy import or_
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
-from models import Remedy, User, db
+from models import Remedy, User, Appointment, db
 from seeds import REMEDY_SEEDS
 
 # Configure logging
@@ -247,6 +247,183 @@ def _register_routes(app: Flask) -> None:
         session.clear()
         flash("You have been logged out.", "success")
         return redirect(url_for("index"))
+
+    @app.route("/health-assessment", methods=["GET", "POST"])
+    def health_assessment():
+        """Health assessment form to collect user health information."""
+        if request.method == "POST":
+            dob = request.form.get("dob", "").strip()
+            ailment1 = request.form.get("ailment1", "").strip()
+            ailment2 = request.form.get("ailment2", "").strip()
+            family_history = request.form.get("family_history", "").strip()
+
+            # Validation
+            if not all([dob, ailment1, ailment2, family_history]):
+                flash("All fields are required.", "error")
+                return render_template("health_assessment.html", current_user=_get_current_user()), 400
+
+            # Validate date of birth format (MM/DD)
+            if not _validate_dob_format(dob):
+                flash("Date of birth must be in MM/DD format (e.g., 03/21).", "error")
+                return render_template("health_assessment.html", current_user=_get_current_user()), 400
+
+            # Validate character limits
+            if len(ailment1) > 400 or len(ailment2) > 400 or len(family_history) > 400:
+                flash("One or more fields exceed the 400 character limit.", "error")
+                return render_template("health_assessment.html", current_user=_get_current_user()), 400
+
+            print(f"Health assessment submitted - DOB: {dob}, Ailments: {len(ailment1)} & {len(ailment2)} chars, Family history: {len(family_history)} chars", flush=True)
+            logger.info(f"Health assessment submitted - DOB: {dob}")
+
+            # Store in session for now (or redirect to results)
+            session["health_data"] = {
+                "dob": dob,
+                "ailment1": ailment1,
+                "ailment2": ailment2,
+                "family_history": family_history,
+            }
+
+            flash("Thank you! Your health information has been received.", "success")
+            return redirect(url_for("index"))
+
+        return render_template("health_assessment.html", current_user=_get_current_user())
+
+    # API endpoints for appointments
+    @app.route("/api/appointments", methods=["GET"])
+    def api_appointments():
+        """Get all appointments for the current user."""
+        current_user = _get_current_user()
+        if not current_user:
+            return {"error": "Not authenticated"}, 401
+
+        appointments = Appointment.query.filter_by(user_id=current_user.id).all()
+        return [apt.to_dict() for apt in appointments]
+
+    @app.route("/api/appointments", methods=["POST"])
+    def create_appointment():
+        """Create a new appointment."""
+        current_user = _get_current_user()
+        if not current_user:
+            return {"error": "Not authenticated"}, 401
+
+        data = request.get_json()
+        date_str = data.get("date", "").strip()
+        time_str = data.get("time", "").strip()
+        notes = data.get("notes", "").strip()
+
+        # Validate inputs
+        if not date_str or not time_str:
+            return {"success": False, "message": "Date and time are required"}, 400
+
+        try:
+            from datetime import datetime
+            apt_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return {"success": False, "message": "Invalid date format"}, 400
+
+        # Validate time format HH:MM
+        if not _validate_time_format(time_str):
+            return {"success": False, "message": "Invalid time format (HH:MM)"}, 400
+
+        try:
+            appointment = Appointment(
+                user_id=current_user.id,
+                appointment_date=apt_date,
+                appointment_time=time_str,
+                notes=notes if notes else None,
+            )
+            db.session.add(appointment)
+            db.session.commit()
+            logger.info(f"Appointment created for user {current_user.username}: {apt_date} at {time_str}")
+            return {"success": True, "appointment": appointment.to_dict()}
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error creating appointment: {e}", exc_info=True)
+            return {"success": False, "message": "Error creating appointment"}, 500
+
+    @app.route("/api/appointments/<int:appointment_id>", methods=["PUT"])
+    def update_appointment(appointment_id):
+        """Update an existing appointment."""
+        current_user = _get_current_user()
+        if not current_user:
+            return {"error": "Not authenticated"}, 401
+
+        appointment = Appointment.query.filter_by(id=appointment_id, user_id=current_user.id).first()
+        if not appointment:
+            return {"success": False, "message": "Appointment not found"}, 404
+
+        data = request.get_json()
+        date_str = data.get("date", "").strip()
+        time_str = data.get("time", "").strip()
+        notes = data.get("notes", "").strip()
+
+        try:
+            from datetime import datetime
+            if date_str:
+                appointment.appointment_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if time_str:
+                if not _validate_time_format(time_str):
+                    return {"success": False, "message": "Invalid time format (HH:MM)"}, 400
+                appointment.appointment_time = time_str
+            if notes or notes == "":
+                appointment.notes = notes if notes else None
+
+            db.session.commit()
+            logger.info(f"Appointment {appointment_id} updated for user {current_user.username}")
+            return {"success": True, "appointment": appointment.to_dict()}
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error updating appointment {appointment_id}: {e}", exc_info=True)
+            return {"success": False, "message": "Error updating appointment"}, 500
+
+    @app.route("/api/appointments/<int:appointment_id>", methods=["DELETE"])
+    def delete_appointment(appointment_id):
+        """Delete an appointment."""
+        current_user = _get_current_user()
+        if not current_user:
+            return {"error": "Not authenticated"}, 401
+
+        appointment = Appointment.query.filter_by(id=appointment_id, user_id=current_user.id).first()
+        if not appointment:
+            return {"success": False, "message": "Appointment not found"}, 404
+
+        try:
+            db.session.delete(appointment)
+            db.session.commit()
+            logger.info(f"Appointment {appointment_id} deleted for user {current_user.username}")
+            return {"success": True}
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error deleting appointment {appointment_id}: {e}", exc_info=True)
+            return {"success": False, "message": "Error deleting appointment"}, 500
+
+
+def _validate_dob_format(dob: str) -> bool:
+    """Validate date of birth in MM/DD format."""
+    if not dob or len(dob) != 5 or dob[2] != '/':
+        return False
+    
+    try:
+        month, day = dob.split('/')
+        month_int = int(month)
+        day_int = int(day)
+        return 1 <= month_int <= 12 and 1 <= day_int <= 31
+    except (ValueError, AttributeError):
+        return False
+
+
+def _validate_time_format(time_str: str) -> bool:
+    """Validate time in HH:MM format."""
+    if not time_str or len(time_str) != 5 or time_str[2] != ':':
+        return False
+    
+    try:
+        hour, minute = time_str.split(':')
+        hour_int = int(hour)
+        minute_int = int(minute)
+        return 0 <= hour_int <= 23 and 0 <= minute_int <= 59
+    except (ValueError, AttributeError):
+        return False
 
 
 def _search_remedies(query: str) -> list[Remedy]:
