@@ -357,6 +357,36 @@
       border: 1px solid #f0aaaa;
       color: #8d2727;
     }
+    .result-box {
+      background: #f4fbf7;
+      border: 1px solid #b7e1c3;
+      border-radius: 10px;
+      padding: 0.9rem;
+      margin-bottom: 1rem;
+    }
+    .result-box h3 {
+      margin: 0 0 0.6rem;
+      color: #2a5b3e;
+      font-size: 1rem;
+    }
+    .salt-row {
+      margin: 0.35rem 0;
+      color: #1f3340;
+      font-size: 0.92rem;
+    }
+    .salt-list {
+      margin: 0.4rem 0 0;
+      padding-left: 1.1rem;
+    }
+    .remedy-rank-list {
+      margin: 0.45rem 0 0;
+      padding-left: 1.3rem;
+    }
+    .remedy-rank-item {
+      margin: 0.35rem 0;
+      color: #1f3340;
+      font-size: 0.92rem;
+    }
     .empty-state {
       text-align: center;
       color: #56656f;
@@ -391,6 +421,41 @@
           <strong>{{ deficient_salt }}</strong>
         </div>
       {% endif %}
+      {% if all_recommended_salts is defined %}
+        <div class="result-box" role="status" aria-live="polite">
+          <h3>Remedy-Based Salt Recommendations</h3>
+          <p class="salt-row"><strong>Current Ailment 1:</strong> {{ ailment1_salts|join(', ') if ailment1_salts else 'No matches found' }}</p>
+          <p class="salt-row"><strong>Current Ailment 2:</strong> {{ ailment2_salts|join(', ') if ailment2_salts else 'No matches found' }}</p>
+          <p class="salt-row"><strong>Family History:</strong> {{ family_history_salts|join(', ') if family_history_salts else 'No matches found' }}</p>
+          <p class="salt-row"><strong>All Recommended Salts:</strong></p>
+          {% if all_recommended_salts %}
+            <ul class="salt-list">
+              {% for salt in all_recommended_salts %}
+                <li>{{ salt }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="salt-row">No salts could be derived from the submitted text.</p>
+          {% endif %}
+
+          <p class="salt-row"><strong>Ranked Remedies (best match first):</strong></p>
+          {% if all_ranked_remedies %}
+            <ol class="remedy-rank-list">
+              {% for remedy in all_ranked_remedies %}
+                <li class="remedy-rank-item">
+                  <strong>{{ remedy.name }}</strong>
+                  (score {{ remedy.score }})
+                  {% if remedy.salts %}
+                    - {{ remedy.salts|join(', ') }}
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ol>
+          {% else %}
+            <p class="salt-row">No remedies could be ranked from the submitted text.</p>
+          {% endif %}
+        </div>
+      {% endif %}
       <form method="post" action="{{ url_for('health_assessment') }}">
         <!-- Date of Birth -->
         <div class="form-group">
@@ -402,6 +467,7 @@
             type="text" 
             id="dob" 
             name="dob" 
+            value="{{ submitted_dob or '' }}"
             placeholder="MM/DD"
             maxlength="5"
             inputmode="numeric"
@@ -423,7 +489,7 @@
             placeholder="Describe your first current ailment..."
             maxlength="400"
             required
-          ></textarea>
+          >{{ submitted_ailment1 or '' }}</textarea>
           <div class="char-count">
             <span>Describe symptoms, severity, duration, etc.</span>
             <span id="count1">0/400</span>
@@ -442,7 +508,7 @@
             placeholder="Describe your second current ailment..."
             maxlength="400"
             required
-          ></textarea>
+          >{{ submitted_ailment2 or '' }}</textarea>
           <div class="char-count">
             <span>Describe symptoms, severity, duration, etc.</span>
             <span id="count2">0/400</span>
@@ -461,7 +527,7 @@
             placeholder="Share relevant family medical history..."
             maxlength="400"
             required
-          ></textarea>
+          >{{ submitted_family_history or '' }}</textarea>
           <div class="char-count">
             <span>Include any hereditary conditions or concerns</span>
             <span id="count3">0/400</span>

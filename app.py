@@ -1,4 +1,5 @@
 import logging
+import re
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import or_
@@ -24,6 +25,12 @@ MONTH_DEFICIENT_SALT = {
     10: "Nat Phos",
     11: "Calc Sulph",
     12: "Silicae",
+}
+
+STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by", "for",
+    "from", "has", "have", "i", "in", "is", "it", "its", "my", "of", "on",
+    "or", "that", "the", "their", "this", "to", "was", "were", "with", "you",
 }
 
 
@@ -300,6 +307,20 @@ def _register_routes(app: Flask) -> None:
 
             month = _extract_month_from_dob(dob)
             deficient_salt = MONTH_DEFICIENT_SALT.get(month)
+            ailment1_ranked_remedies = _rank_remedies_from_text(ailment1)
+            ailment2_ranked_remedies = _rank_remedies_from_text(ailment2)
+            family_history_ranked_remedies = _rank_remedies_from_text(family_history)
+
+            ailment1_salts = _derive_salts_from_ranked_remedies(ailment1_ranked_remedies)
+            ailment2_salts = _derive_salts_from_ranked_remedies(ailment2_ranked_remedies)
+            family_history_salts = _derive_salts_from_ranked_remedies(family_history_ranked_remedies)
+
+            all_ranked_remedies = _merge_ranked_remedies(
+                ailment1_ranked_remedies,
+                ailment2_ranked_remedies,
+                family_history_ranked_remedies,
+            )
+            all_recommended_salts = _derive_salts_from_ranked_remedies(all_ranked_remedies)
 
             if deficient_salt:
                 flash(
@@ -309,12 +330,25 @@ def _register_routes(app: Flask) -> None:
             else:
                 flash("Could not derive deficient salt from the provided date of birth.", "error")
 
+            if all_recommended_salts:
+                flash("Generated salt recommendations from your ailments and family history.", "success")
+            else:
+                flash("No remedy-based salt matches found for the submitted text.", "error")
+
             return render_template(
                 "health_assessment.html",
                 current_user=_get_current_user(),
                 deficient_salt=deficient_salt,
                 birth_month=month,
                 submitted_dob=dob,
+                submitted_ailment1=ailment1,
+                submitted_ailment2=ailment2,
+                submitted_family_history=family_history,
+                ailment1_salts=ailment1_salts,
+                ailment2_salts=ailment2_salts,
+                family_history_salts=family_history_salts,
+                all_recommended_salts=all_recommended_salts,
+                all_ranked_remedies=all_ranked_remedies,
             )
 
         return render_template("health_assessment.html", current_user=_get_current_user())
@@ -451,6 +485,163 @@ def _extract_month_from_dob(dob: str) -> int | None:
         return int(dob.split("/")[0])
     except (ValueError, AttributeError, IndexError):
         return None
+
+
+def _extract_candidate_terms(text: str, limit: int = 10) -> list[str]:
+    """Extract meaningful search terms from free-text user input."""
+    terms: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r"[a-zA-Z]+", text.lower()):
+        if len(token) < 3 or token in STOP_WORDS or token in seen:
+            continue
+        seen.add(token)
+        terms.append(token)
+        if len(terms) >= limit:
+            break
+    return terms
+
+
+def _parse_salts_from_full_name(full_name: str) -> list[str]:
+    """Extract short salt names from a remedy full_name string."""
+    salts: list[str] = []
+    seen: set[str] = set()
+    for part in full_name.split(","):
+        candidate = part.strip()
+        if not candidate:
+            continue
+        short_name = candidate.split("(")[0].strip().strip(".-")
+        if not short_name:
+            continue
+        key = short_name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        salts.append(short_name)
+    return salts
+
+
+def _rank_remedies_from_text(user_text: str, max_results: int = 8) -> list[dict[str, object]]:
+    """Rank remedies from the remedies table by text overlap score."""
+    text = user_text.strip()
+    if not text:
+        return []
+
+    remedy_scores: dict[int, int] = {}
+    remedies_by_id: dict[int, Remedy] = {}
+
+    for remedy in _search_remedies(text):
+        remedies_by_id[remedy.id] = remedy
+        remedy_scores[remedy.id] = remedy_scores.get(remedy.id, 0) + 3
+
+    for term in _extract_candidate_terms(text):
+        for remedy in _search_remedies(term):
+            remedies_by_id[remedy.id] = remedy
+            remedy_scores[remedy.id] = remedy_scores.get(remedy.id, 0) + 1
+
+    ranked_remedies = sorted(
+        remedies_by_id.values(),
+        key=lambda remedy: (
+            -remedy_scores.get(remedy.id, 0),
+            remedy.name.lower(),
+        ),
+    )
+
+    ranked_items: list[dict[str, object]] = []
+    for remedy in ranked_remedies[:max_results]:
+        ranked_items.append(
+            {
+                "name": remedy.name,
+                "salts": _parse_salts_from_full_name(remedy.full_name),
+                "score": remedy_scores.get(remedy.id, 0),
+            }
+        )
+
+    return ranked_items
+
+
+def _derive_salts_from_ranked_remedies(
+    ranked_remedies: list[dict[str, object]],
+    max_salts: int = 8,
+) -> list[str]:
+    """Extract unique salts from ranked remedies while preserving rank order."""
+    salts: list[str] = []
+    seen_salts: set[str] = set()
+
+    for ranked in ranked_remedies:
+        for salt in ranked["salts"]:
+            key = salt.casefold()
+            if key in seen_salts:
+                continue
+            seen_salts.add(key)
+            salts.append(salt)
+            if len(salts) >= max_salts:
+                return salts
+
+    return salts
+
+
+def _derive_salts_from_remedies(user_text: str) -> list[str]:
+    """Derive salt recommendations from remedies table using text overlap scoring."""
+    ranked_remedies = _rank_remedies_from_text(user_text, max_results=25)
+    return _derive_salts_from_ranked_remedies(ranked_remedies, max_salts=8)
+
+
+def _merge_ranked_remedies(
+    *ranked_lists: list[dict[str, object]],
+    max_results: int = 12,
+) -> list[dict[str, object]]:
+    """Merge ranked remedies across inputs and sort by total score descending."""
+    merged_by_name: dict[str, dict[str, object]] = {}
+    order: list[str] = []
+
+    for ranked_list in ranked_lists:
+        for ranked in ranked_list:
+            name = str(ranked["name"])
+            key = name.casefold()
+            score = int(ranked["score"])
+            salts = [str(salt) for salt in ranked["salts"]]
+
+            if key not in merged_by_name:
+                merged_by_name[key] = {
+                    "name": name,
+                    "score": score,
+                    "salts": salts[:],
+                }
+                order.append(key)
+                continue
+
+            existing = merged_by_name[key]
+            existing["score"] = int(existing["score"]) + score
+            existing_salts = existing["salts"]
+            seen_salts = {salt.casefold() for salt in existing_salts}
+            for salt in salts:
+                if salt.casefold() in seen_salts:
+                    continue
+                existing_salts.append(salt)
+                seen_salts.add(salt.casefold())
+
+    ranked_merged = sorted(
+        merged_by_name.values(),
+        key=lambda item: (
+            -int(item["score"]),
+            order.index(str(item["name"]).casefold()),
+        ),
+    )
+    return ranked_merged[:max_results]
+
+
+def _merge_unique_salts(*salt_lists: list[str]) -> list[str]:
+    """Merge multiple salt lists while preserving original order."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for salt_list in salt_lists:
+        for salt in salt_list:
+            key = salt.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(salt)
+    return merged
 
 
 def _validate_time_format(time_str: str) -> bool:
