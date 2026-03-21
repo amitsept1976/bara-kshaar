@@ -385,6 +385,12 @@
     <!-- Health Assessment Form -->
     <div class="card">
       <h2>Health Assessment</h2>
+      {% if deficient_salt %}
+        <div class="flash success" role="status" aria-live="polite">
+          Deficient salt for month {{ birth_month }} (DOB: {{ submitted_dob }}):
+          <strong>{{ deficient_salt }}</strong>
+        </div>
+      {% endif %}
       <form method="post" action="{{ url_for('health_assessment') }}">
         <!-- Date of Birth -->
         <div class="form-group">

@@ -11,6 +11,21 @@ from seeds import REMEDY_SEEDS
 # Configure logging
 logger = logging.getLogger(__name__)
 
+MONTH_DEFICIENT_SALT = {
+    1: "Calc Phos",
+    2: "Nat Mur",
+    3: "Ferr Phos",
+    4: "Kali Phos",
+    5: "Nat Sulph",
+    6: "Kali Mur",
+    7: "Calc Flour",
+    8: "Mag Phos",
+    9: "Kali Sulph",
+    10: "Nat Phos",
+    11: "Calc Sulph",
+    12: "Silicae",
+}
+
 
 def _normalize_prompt(prompt: str) -> str:
     """Collapse extra whitespace in a prompt pulled from seeds."""
@@ -283,8 +298,24 @@ def _register_routes(app: Flask) -> None:
                 "family_history": family_history,
             }
 
-            flash("Thank you! Your health information has been received.", "success")
-            return redirect(url_for("index"))
+            month = _extract_month_from_dob(dob)
+            deficient_salt = MONTH_DEFICIENT_SALT.get(month)
+
+            if deficient_salt:
+                flash(
+                    f"Derived deficient salt from birth month {month}: {deficient_salt}.",
+                    "success",
+                )
+            else:
+                flash("Could not derive deficient salt from the provided date of birth.", "error")
+
+            return render_template(
+                "health_assessment.html",
+                current_user=_get_current_user(),
+                deficient_salt=deficient_salt,
+                birth_month=month,
+                submitted_dob=dob,
+            )
 
         return render_template("health_assessment.html", current_user=_get_current_user())
 
@@ -410,6 +441,16 @@ def _validate_dob_format(dob: str) -> bool:
         return 1 <= month_int <= 12 and 1 <= day_int <= 31
     except (ValueError, AttributeError):
         return False
+
+
+def _extract_month_from_dob(dob: str) -> int | None:
+    """Extract birth month from MM/DD date string."""
+    if not _validate_dob_format(dob):
+        return None
+    try:
+        return int(dob.split("/")[0])
+    except (ValueError, AttributeError, IndexError):
+        return None
 
 
 def _validate_time_format(time_str: str) -> bool:
