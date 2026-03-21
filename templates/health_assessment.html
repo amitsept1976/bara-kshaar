@@ -313,6 +313,25 @@
       text-decoration: none;
       margin: 0 0.5rem;
     }
+    .footer-links form {
+      display: inline;
+      margin: 0;
+      padding: 0;
+    }
+    .footer-links .logout-link {
+      background: none;
+      border: none;
+      color: #2e6786;
+      font-weight: 400;
+      font-size: 0.9rem;
+      padding: 0;
+      margin: 0 0.5rem;
+      cursor: pointer;
+    }
+    .footer-links .logout-link:hover {
+      text-decoration: underline;
+      background: none;
+    }
     .footer-links a:hover {
       text-decoration: underline;
     }
@@ -481,7 +500,10 @@
     <div class="footer-links">
       <a href="{{ url_for('index') }}">← Back to Home</a>
       {% if current_user %}
-        | <a href="{{ url_for('logout') }}" onclick="return confirm('Are you sure?')">Logout</a>
+        |
+        <form method="post" action="{{ url_for('logout') }}" onsubmit="return confirm('Are you sure?')">
+          <button type="submit" class="logout-link">Logout</button>
+        </form>
       {% else %}
         | <a href="{{ url_for('login') }}">Login</a>
         | <a href="{{ url_for('register') }}">Register</a>
