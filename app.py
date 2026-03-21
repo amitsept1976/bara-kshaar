@@ -1,3 +1,4 @@
+import logging
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import or_
@@ -6,6 +7,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from config import Config
 from models import Remedy, User, db
 from seeds import REMEDY_SEEDS
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 def _normalize_prompt(prompt: str) -> str:
@@ -64,8 +68,21 @@ def create_app() -> Flask:
 
     # Initialize database tables and seed data on app startup
     with app.app_context():
-        db.create_all()
-        _seed_database_if_empty()
+        try:
+            db.create_all()
+            print("✓ Database tables created successfully", flush=True)
+            logger.info("Database tables created successfully")
+        except Exception as e:
+            print(f"✗ Error creating database tables: {e}", flush=True)
+            logger.error(f"Error creating database tables: {e}", exc_info=True)
+        
+        try:
+            _seed_database_if_empty()
+            print("✓ Database seeding completed", flush=True)
+            logger.info("Database seeding completed")
+        except Exception as e:
+            print(f"✗ Error seeding database: {e}", flush=True)
+            logger.error(f"Error seeding database: {e}", exc_info=True)
 
     # Register CLI commands
     _register_cli_commands(app)
@@ -131,6 +148,16 @@ def _register_cli_commands(app: Flask) -> None:
 
 def _register_routes(app: Flask) -> None:
     """Register application routes."""
+    @app.route("/health", methods=["GET"])
+    def health():
+        """Health check endpoint to verify database connectivity."""
+        try:
+            db.session.execute("SELECT 1")
+            return {"status": "ok", "database": "connected"}, 200
+        except Exception as e:
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            return {"status": "error", "database": "disconnected", "error": str(e)}, 500
+
     @app.route("/", methods=["GET"])
     def index():
         query = request.args.get("q", "").strip()
@@ -193,12 +220,18 @@ def _register_routes(app: Flask) -> None:
                 )
                 db.session.add(new_user)
                 db.session.commit()
-            except IntegrityError:
+                print(f"✓ User registered successfully: {username}", flush=True)
+                logger.info(f"User registered successfully: {username}")
+            except IntegrityError as e:
                 db.session.rollback()
+                print(f"✗ IntegrityError during registration: {e}", flush=True)
+                logger.error(f"IntegrityError during registration for {username}: {e}", exc_info=True)
                 flash("That username or email is already in use.", "error")
                 return render_template("register.html", current_user=_get_current_user()), 409
-            except SQLAlchemyError:
+            except SQLAlchemyError as e:
                 db.session.rollback()
+                print(f"✗ Database error during registration: {e}", flush=True)
+                logger.error(f"Database error during registration for {username}: {e}", exc_info=True)
                 flash("Unable to create account right now. Please try again.", "error")
                 return render_template("register.html", current_user=_get_current_user()), 500
 
