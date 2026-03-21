@@ -632,20 +632,24 @@
     let appointments = {};
 
     // Character counters
-    document.getElementById('ailment1').addEventListener('input', function() {
-      document.getElementById('count1').textContent = this.value.length + '/400';
-      updateCountStyle('count1', this.value.length);
-    });
+    function bindCounter(fieldId, counterId) {
+      const field = document.getElementById(fieldId);
+      const counter = document.getElementById(counterId);
+      if (!field || !counter) return;
 
-    document.getElementById('ailment2').addEventListener('input', function() {
-      document.getElementById('count2').textContent = this.value.length + '/400';
-      updateCountStyle('count2', this.value.length);
-    });
+      const refresh = () => {
+        const length = field.value.length;
+        counter.textContent = length + '/400';
+        updateCountStyle(counterId, length);
+      };
 
-    document.getElementById('family_history').addEventListener('input', function() {
-      document.getElementById('count3').textContent = this.value.length + '/400';
-      updateCountStyle('count3', this.value.length);
-    });
+      field.addEventListener('input', refresh);
+      refresh();
+    }
+
+    bindCounter('ailment1', 'count1');
+    bindCounter('ailment2', 'count2');
+    bindCounter('family_history', 'count3');
 
     function updateCountStyle(elementId, length) {
       const countEl = document.getElementById(elementId);

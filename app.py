@@ -1,8 +1,11 @@
 import logging
 import re
+from datetime import datetime
+from typing import TypedDict
+
 from flask import Flask, flash, redirect, render_template, request, session, url_for
+from sqlalchemy import or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import or_
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
@@ -80,6 +83,12 @@ def _build_search_prompts(
 
 
 SEARCH_PROMPTS, SEARCH_SUGGESTIONS = _build_search_prompts()
+
+
+class RankedRemedy(TypedDict):
+    name: str
+    salts: list[str]
+    score: int
 
 
 def create_app() -> Flask:
@@ -170,11 +179,19 @@ def _register_cli_commands(app: Flask) -> None:
 
 def _register_routes(app: Flask) -> None:
     """Register application routes."""
+    def _render_health_assessment(**context: object) -> str:
+        """Render health assessment template with current user injected."""
+        return render_template(
+            "health_assessment.html",
+            current_user=_get_current_user(),
+            **context,
+        )
+
     @app.route("/health", methods=["GET"])
     def health():
         """Health check endpoint to verify database connectivity."""
         try:
-            db.session.execute("SELECT 1")
+            db.session.execute(text("SELECT 1"))
             return {"status": "ok", "database": "connected"}, 200
         except Exception as e:
             logger.error(f"Health check failed: {e}", exc_info=True)
@@ -282,17 +299,17 @@ def _register_routes(app: Flask) -> None:
             # Validation
             if not all([dob, ailment1, ailment2, family_history]):
                 flash("All fields are required.", "error")
-                return render_template("health_assessment.html", current_user=_get_current_user()), 400
+                return _render_health_assessment(), 400
 
             # Validate date of birth format (MM/DD)
             if not _validate_dob_format(dob):
                 flash("Date of birth must be in MM/DD format (e.g., 03/21).", "error")
-                return render_template("health_assessment.html", current_user=_get_current_user()), 400
+                return _render_health_assessment(), 400
 
             # Validate character limits
             if len(ailment1) > 400 or len(ailment2) > 400 or len(family_history) > 400:
                 flash("One or more fields exceed the 400 character limit.", "error")
-                return render_template("health_assessment.html", current_user=_get_current_user()), 400
+                return _render_health_assessment(), 400
 
             print(f"Health assessment submitted - DOB: {dob}, Ailments: {len(ailment1)} & {len(ailment2)} chars, Family history: {len(family_history)} chars", flush=True)
             logger.info(f"Health assessment submitted - DOB: {dob}")
@@ -335,9 +352,7 @@ def _register_routes(app: Flask) -> None:
             else:
                 flash("No remedy-based salt matches found for the submitted text.", "error")
 
-            return render_template(
-                "health_assessment.html",
-                current_user=_get_current_user(),
+            return _render_health_assessment(
                 deficient_salt=deficient_salt,
                 birth_month=month,
                 submitted_dob=dob,
@@ -351,7 +366,7 @@ def _register_routes(app: Flask) -> None:
                 all_ranked_remedies=all_ranked_remedies,
             )
 
-        return render_template("health_assessment.html", current_user=_get_current_user())
+        return _render_health_assessment()
 
     # API endpoints for appointments
     @app.route("/api/appointments", methods=["GET"])
@@ -381,7 +396,6 @@ def _register_routes(app: Flask) -> None:
             return {"success": False, "message": "Date and time are required"}, 400
 
         try:
-            from datetime import datetime
             apt_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             return {"success": False, "message": "Invalid date format"}, 400
@@ -423,7 +437,6 @@ def _register_routes(app: Flask) -> None:
         notes = data.get("notes", "").strip()
 
         try:
-            from datetime import datetime
             if date_str:
                 appointment.appointment_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             if time_str:
@@ -520,7 +533,7 @@ def _parse_salts_from_full_name(full_name: str) -> list[str]:
     return salts
 
 
-def _rank_remedies_from_text(user_text: str, max_results: int = 8) -> list[dict[str, object]]:
+def _rank_remedies_from_text(user_text: str, max_results: int = 8) -> list[RankedRemedy]:
     """Rank remedies from the remedies table by text overlap score."""
     text = user_text.strip()
     if not text:
@@ -546,7 +559,7 @@ def _rank_remedies_from_text(user_text: str, max_results: int = 8) -> list[dict[
         ),
     )
 
-    ranked_items: list[dict[str, object]] = []
+    ranked_items: list[RankedRemedy] = []
     for remedy in ranked_remedies[:max_results]:
         ranked_items.append(
             {
@@ -559,10 +572,7 @@ def _rank_remedies_from_text(user_text: str, max_results: int = 8) -> list[dict[
     return ranked_items
 
 
-def _derive_salts_from_ranked_remedies(
-    ranked_remedies: list[dict[str, object]],
-    max_salts: int = 8,
-) -> list[str]:
+def _derive_salts_from_ranked_remedies(ranked_remedies: list[RankedRemedy], max_salts: int = 8) -> list[str]:
     """Extract unique salts from ranked remedies while preserving rank order."""
     salts: list[str] = []
     seen_salts: set[str] = set()
@@ -580,18 +590,12 @@ def _derive_salts_from_ranked_remedies(
     return salts
 
 
-def _derive_salts_from_remedies(user_text: str) -> list[str]:
-    """Derive salt recommendations from remedies table using text overlap scoring."""
-    ranked_remedies = _rank_remedies_from_text(user_text, max_results=25)
-    return _derive_salts_from_ranked_remedies(ranked_remedies, max_salts=8)
-
-
 def _merge_ranked_remedies(
-    *ranked_lists: list[dict[str, object]],
+    *ranked_lists: list[RankedRemedy],
     max_results: int = 12,
-) -> list[dict[str, object]]:
+) -> list[RankedRemedy]:
     """Merge ranked remedies across inputs and sort by total score descending."""
-    merged_by_name: dict[str, dict[str, object]] = {}
+    merged_by_name: dict[str, RankedRemedy] = {}
     order: list[str] = []
 
     for ranked_list in ranked_lists:
@@ -628,20 +632,6 @@ def _merge_ranked_remedies(
         ),
     )
     return ranked_merged[:max_results]
-
-
-def _merge_unique_salts(*salt_lists: list[str]) -> list[str]:
-    """Merge multiple salt lists while preserving original order."""
-    merged: list[str] = []
-    seen: set[str] = set()
-    for salt_list in salt_lists:
-        for salt in salt_list:
-            key = salt.casefold()
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(salt)
-    return merged
 
 
 def _validate_time_format(time_str: str) -> bool:
