@@ -185,7 +185,7 @@ def _register_routes(app: Flask) -> None:
             session["user_id"] = user.id
             session["username"] = user.username
             flash("You are now logged in.", "success")
-            return redirect(url_for("index"))
+            return redirect(url_for("health_assessment"))
 
         return render_template("login.html", current_user=_get_current_user())
 
@@ -238,7 +238,7 @@ def _register_routes(app: Flask) -> None:
             session["user_id"] = new_user.id
             session["username"] = new_user.username
             flash("Registration successful. Welcome!", "success")
-            return redirect(url_for("index"))
+            return redirect(url_for("health_assessment"))
 
         return render_template("register.html", current_user=_get_current_user())
 
