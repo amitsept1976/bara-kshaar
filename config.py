@@ -14,6 +14,28 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_first(*names: str, default: str = "") -> str:
+    """Return the first non-empty environment variable value from a list of names."""
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
+    return default
+
+
+def _env_int(*names: str, default: int) -> int:
+    """Return the first integer environment variable value from a list of names."""
+    for name in names:
+        value = os.getenv(name)
+        if value is None or not value.strip():
+            continue
+        try:
+            return int(value.strip())
+        except ValueError:
+            continue
+    return default
+
+
 def _normalize_database_url(url: str) -> str:
     """Normalize provider URLs (e.g., Render/Heroku) for SQLAlchemy."""
     if not url:
@@ -45,14 +67,14 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
 
     # SMTP email configuration
-    MAIL_SERVER = os.getenv("MAIL_SERVER", "")
-    MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
-    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
-    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+    MAIL_SERVER = _env_first("MAIL_SERVER", "SMTP_SERVER")
+    MAIL_PORT = _env_int("MAIL_PORT", "SMTP_PORT", default=587)
+    MAIL_USERNAME = _env_first("MAIL_USERNAME", "SMTP_USERNAME", "EMAIL_HOST_USER")
+    MAIL_PASSWORD = _env_first("MAIL_PASSWORD", "SMTP_PASSWORD", "EMAIL_HOST_PASSWORD")
     MAIL_USE_TLS = _env_bool("MAIL_USE_TLS", default=True)
     MAIL_USE_SSL = _env_bool("MAIL_USE_SSL", default=False)
-    MAIL_FROM = os.getenv("MAIL_FROM", MAIL_USERNAME)
+    MAIL_FROM = _env_first("MAIL_FROM", "EMAIL_FROM", "DEFAULT_FROM_EMAIL", default=MAIL_USERNAME)
 
     # Admin notifications
-    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
-    ADMIN_API_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
+    ADMIN_EMAIL = _env_first("ADMIN_EMAIL", "ALERT_EMAIL")
+    ADMIN_API_TOKEN = _env_first("ADMIN_API_TOKEN")

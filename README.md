@@ -64,6 +64,16 @@ A minimal Flask application that lets you search the 12 tissue‑salt remedies.
    ADMIN_API_TOKEN=change-this-to-a-strong-random-token
    ```
 
+   Alternative SMTP variable names are also accepted in production:
+
+   ```ini
+   SMTP_SERVER=smtp.example.com
+   SMTP_PORT=587
+   SMTP_USERNAME=your-smtp-username
+   SMTP_PASSWORD=your-smtp-password
+   EMAIL_FROM=no-reply@example.com
+   ```
+
 3. Initialise the database and seed the twelve salts:
 
    ```bash
@@ -101,6 +111,14 @@ curl -X POST http://localhost:5000/api/admin/send-appointment-reminders \
 The reminder system prevents duplicate reminders by recording one reminder per appointment per reminder day.
 
 In production, schedule the above command to run once daily (for example via a cron job or your hosting provider's scheduler).
+
+## Render deployment notes
+
+- Render does not use your local `.env` file unless you explicitly add those keys in the Render dashboard.
+- Set mail variables in Render under your service's Environment tab.
+- At minimum, configure `MAIL_SERVER` (or `SMTP_SERVER`) and `MAIL_FROM` (or `EMAIL_FROM`).
+- If your SMTP provider requires authentication, also configure username and password.
+- On startup, the app now logs whether mail configuration is complete so you can verify the Render deployment picked up the variables.
 
 ## Project layout
 

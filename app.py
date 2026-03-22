@@ -1,6 +1,7 @@
 import logging
 import re
 import secrets
+import ssl
 import smtplib
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
@@ -94,10 +95,64 @@ class RankedRemedy(TypedDict):
     score: int
 
 
+def _get_mail_settings(config: dict | object) -> dict[str, object]:
+    """Read normalized mail settings from Flask config and report missing requirements."""
+    mail_server = str(config.get("MAIL_SERVER", "")).strip()
+    mail_port = int(config.get("MAIL_PORT", 587))
+    mail_username = str(config.get("MAIL_USERNAME", "")).strip()
+    mail_password = str(config.get("MAIL_PASSWORD", "")).strip()
+    mail_use_tls = bool(config.get("MAIL_USE_TLS", True))
+    mail_use_ssl = bool(config.get("MAIL_USE_SSL", False))
+    mail_from = str(config.get("MAIL_FROM", "")).strip() or mail_username
+    admin_email = str(config.get("ADMIN_EMAIL", "")).strip().lower()
+
+    missing: list[str] = []
+    if not mail_server:
+        missing.append("MAIL_SERVER or SMTP_SERVER")
+    if not mail_from:
+        missing.append("MAIL_FROM/EMAIL_FROM or MAIL_USERNAME")
+
+    return {
+        "mail_server": mail_server,
+        "mail_port": mail_port,
+        "mail_username": mail_username,
+        "mail_password": mail_password,
+        "mail_use_tls": mail_use_tls,
+        "mail_use_ssl": mail_use_ssl,
+        "mail_from": mail_from,
+        "admin_email": admin_email,
+        "missing": missing,
+        "is_configured": not missing,
+    }
+
+
+def _log_startup_configuration(app: Flask) -> None:
+    """Log deployment-critical configuration status during startup."""
+    mail_settings = _get_mail_settings(app.config)
+    if mail_settings["is_configured"]:
+        logger.info(
+            "Mail configuration loaded: host=%s port=%s tls=%s ssl=%s from=%s admin=%s",
+            mail_settings["mail_server"],
+            mail_settings["mail_port"],
+            mail_settings["mail_use_tls"],
+            mail_settings["mail_use_ssl"],
+            mail_settings["mail_from"],
+            mail_settings["admin_email"] or "(not set)",
+        )
+        return
+
+    logger.warning(
+        "Email notifications are disabled because required mail configuration is missing: %s. "
+        "On Render, set these values in the service Environment tab rather than relying on a local .env file.",
+        ", ".join(mail_settings["missing"]),
+    )
+
+
 def create_app() -> Flask:
     """Create and configure the Flask application."""
     app = Flask(__name__, static_folder="static")
     app.config.from_object(Config)
+    _log_startup_configuration(app)
     db.init_app(app)
 
     # Initialize database tables and seed data on app startup
@@ -553,19 +608,21 @@ def _build_email_recipients(user_email: str | None = None) -> tuple[list[str], s
 
 def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
     """Send an email using SMTP settings from app config."""
-    mail_server = str(current_app.config.get("MAIL_SERVER", "")).strip()
-    mail_port = int(current_app.config.get("MAIL_PORT", 587))
-    mail_username = str(current_app.config.get("MAIL_USERNAME", "")).strip()
-    mail_password = str(current_app.config.get("MAIL_PASSWORD", "")).strip()
-    mail_use_tls = bool(current_app.config.get("MAIL_USE_TLS", True))
-    mail_use_ssl = bool(current_app.config.get("MAIL_USE_SSL", False))
-    mail_from = str(current_app.config.get("MAIL_FROM", "")).strip() or mail_username
+    mail_settings = _get_mail_settings(current_app.config)
+    mail_server = str(mail_settings["mail_server"])
+    mail_port = int(mail_settings["mail_port"])
+    mail_username = str(mail_settings["mail_username"])
+    mail_password = str(mail_settings["mail_password"])
+    mail_use_tls = bool(mail_settings["mail_use_tls"])
+    mail_use_ssl = bool(mail_settings["mail_use_ssl"])
+    mail_from = str(mail_settings["mail_from"])
 
-    if not mail_server:
-        logger.warning("Skipping email (MAIL_SERVER not configured). Subject: %s", subject)
-        return False
-    if not mail_from:
-        logger.warning("Skipping email (MAIL_FROM or MAIL_USERNAME not configured). Subject: %s", subject)
+    if not mail_settings["is_configured"]:
+        logger.warning(
+            "Skipping email because mail configuration is incomplete (%s). Subject: %s",
+            ", ".join(mail_settings["missing"]),
+            subject,
+        )
         return False
     if not recipients:
         logger.warning("Skipping email (no recipients). Subject: %s", subject)
@@ -575,21 +632,25 @@ def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
     msg["Subject"] = subject
     msg["From"] = mail_from
     msg["To"] = ", ".join(recipients)
+    msg["Reply-To"] = mail_from
     msg.set_content(body)
 
     try:
+        ssl_context = ssl.create_default_context()
         if mail_use_ssl:
-            with smtplib.SMTP_SSL(mail_server, mail_port, timeout=15) as smtp:
+            with smtplib.SMTP_SSL(mail_server, mail_port, timeout=15, context=ssl_context) as smtp:
                 if mail_username and mail_password:
                     smtp.login(mail_username, mail_password)
-                smtp.send_message(msg)
+                smtp.send_message(msg, from_addr=mail_from, to_addrs=recipients)
         else:
             with smtplib.SMTP(mail_server, mail_port, timeout=15) as smtp:
+                smtp.ehlo()
                 if mail_use_tls:
-                    smtp.starttls()
+                    smtp.starttls(context=ssl_context)
+                    smtp.ehlo()
                 if mail_username and mail_password:
                     smtp.login(mail_username, mail_password)
-                smtp.send_message(msg)
+                smtp.send_message(msg, from_addr=mail_from, to_addrs=recipients)
     except Exception as e:
         logger.error("Failed to send email '%s': %s", subject, e, exc_info=True)
         return False
@@ -610,7 +671,13 @@ def _send_user_and_admin_emails(
     user_sent = _send_email(user_subject, user_body, [user_email])
 
     if admin_email and admin_email != user_email.strip().lower():
-        _send_email(admin_subject, admin_body, [admin_email])
+        admin_sent = _send_email(admin_subject, admin_body, [admin_email])
+        if not admin_sent:
+            logger.warning(
+                "Admin notification was not delivered. Subject: %s, Recipient: %s",
+                admin_subject,
+                admin_email,
+            )
 
     return user_sent
 
