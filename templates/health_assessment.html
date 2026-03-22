@@ -415,19 +415,16 @@
     <!-- Health Assessment Form -->
     <div class="card">
       <h2>Health Assessment</h2>
-      {% if deficient_salt %}
-        <div class="flash success" role="status" aria-live="polite">
-          Deficient salt for month {{ birth_month }} (DOB: {{ submitted_dob }}):
-          <strong>{{ deficient_salt }}</strong>
-        </div>
-      {% endif %}
       {% if all_recommended_salts is defined %}
         <div class="result-box" role="status" aria-live="polite">
-          <h3>Remedy-Based Salt Recommendations</h3>
+          <h3>Combined Salt Recommendations</h3>
+          {% if deficient_salt %}
+            <p class="salt-row"><strong>Birth Month Salt:</strong> {{ deficient_salt }} (month {{ birth_month }})</p>
+          {% endif %}
           <p class="salt-row"><strong>Current Ailment 1:</strong> {{ ailment1_salts|join(', ') if ailment1_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>Current Ailment 2:</strong> {{ ailment2_salts|join(', ') if ailment2_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>Family History:</strong> {{ family_history_salts|join(', ') if family_history_salts else 'No matches found' }}</p>
-          <p class="salt-row"><strong>All Recommended Salts:</strong></p>
+          <p class="salt-row"><strong>All Recommended Salts (month + remedies):</strong></p>
           {% if all_recommended_salts %}
             <ul class="salt-list">
               {% for salt in all_recommended_salts %}

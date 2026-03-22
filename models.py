@@ -64,3 +64,18 @@ class Appointment(db.Model):
             "notes": self.notes,
             "created_at": self.created_at.isoformat(),
         }
+
+
+class AppointmentReminder(db.Model):
+    __tablename__ = "appointment_reminders"
+    __table_args__ = (
+        db.UniqueConstraint("appointment_id", "reminder_date", name="uq_appointment_reminder_day"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey("appointments.id"), nullable=False)
+    reminder_date = db.Column(db.Date, nullable=False)
+    sent_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<AppointmentReminder appointment={self.appointment_id} day={self.reminder_date}>"

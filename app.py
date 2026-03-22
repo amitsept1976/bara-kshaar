@@ -1,15 +1,18 @@
 import logging
 import re
-from datetime import datetime
+import secrets
+import smtplib
+from datetime import date, datetime, timedelta
+from email.message import EmailMessage
 from typing import TypedDict
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, current_app, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
-from models import Remedy, User, Appointment, db
+from models import Appointment, AppointmentReminder, Remedy, User, db
 from seeds import REMEDY_SEEDS
 
 # Configure logging
@@ -176,6 +179,18 @@ def _register_cli_commands(app: Flask) -> None:
         """Update database with current seed data, replacing existing remedies."""
         _update_database_from_seeds()
 
+    @app.cli.command("send-appointment-reminders")
+    def send_appointment_reminders() -> None:
+        """Send reminder emails for appointments scheduled tomorrow."""
+        result = _send_next_day_appointment_reminders()
+        print(
+            "Reminder processing complete. "
+            f"Notified: {result['notified']}, "
+            f"Skipped: {result['skipped_already_sent']}, "
+            f"Failed: {result['failed']}, "
+            f"Total candidates: {result['total_candidates']}"
+        )
+
 
 def _register_routes(app: Flask) -> None:
     """Register application routes."""
@@ -261,6 +276,7 @@ def _register_routes(app: Flask) -> None:
                 db.session.commit()
                 print(f"✓ User registered successfully: {username}", flush=True)
                 logger.info(f"User registered successfully: {username}")
+                _send_registration_notifications(new_user)
             except IntegrityError as e:
                 db.session.rollback()
                 print(f"✗ IntegrityError during registration: {e}", flush=True)
@@ -337,7 +353,11 @@ def _register_routes(app: Flask) -> None:
                 ailment2_ranked_remedies,
                 family_history_ranked_remedies,
             )
-            all_recommended_salts = _derive_salts_from_ranked_remedies(all_ranked_remedies)
+            remedy_recommended_salts = _derive_salts_from_ranked_remedies(all_ranked_remedies)
+            all_recommended_salts = _merge_unique_salts(
+                [deficient_salt] if deficient_salt else [],
+                remedy_recommended_salts,
+            )
 
             if deficient_salt:
                 flash(
@@ -414,6 +434,7 @@ def _register_routes(app: Flask) -> None:
             db.session.add(appointment)
             db.session.commit()
             logger.info(f"Appointment created for user {current_user.username}: {apt_date} at {time_str}")
+            _send_appointment_created_notifications(current_user, appointment)
             return {"success": True, "appointment": appointment.to_dict()}
         except Exception as e:
             db.session.rollback()
@@ -435,6 +456,9 @@ def _register_routes(app: Flask) -> None:
         date_str = data.get("date", "").strip()
         time_str = data.get("time", "").strip()
         notes = data.get("notes", "").strip()
+        old_date = appointment.appointment_date
+        old_time = appointment.appointment_time
+        old_notes = appointment.notes
 
         try:
             if date_str:
@@ -448,6 +472,13 @@ def _register_routes(app: Flask) -> None:
 
             db.session.commit()
             logger.info(f"Appointment {appointment_id} updated for user {current_user.username}")
+            _send_appointment_updated_notifications(
+                current_user,
+                appointment,
+                old_date,
+                old_time,
+                old_notes,
+            )
             return {"success": True, "appointment": appointment.to_dict()}
         except Exception as e:
             db.session.rollback()
@@ -465,15 +496,362 @@ def _register_routes(app: Flask) -> None:
         if not appointment:
             return {"success": False, "message": "Appointment not found"}, 404
 
+        deleted_date = appointment.appointment_date
+        deleted_time = appointment.appointment_time
+        deleted_notes = appointment.notes
+
         try:
             db.session.delete(appointment)
             db.session.commit()
             logger.info(f"Appointment {appointment_id} deleted for user {current_user.username}")
+            _send_appointment_deleted_notifications(
+                current_user,
+                appointment_id,
+                deleted_date,
+                deleted_time,
+                deleted_notes,
+            )
             return {"success": True}
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error deleting appointment {appointment_id}: {e}", exc_info=True)
             return {"success": False, "message": "Error deleting appointment"}, 500
+
+    @app.route("/api/admin/send-appointment-reminders", methods=["POST"])
+    def admin_send_appointment_reminders():
+        """Admin endpoint to trigger one-day-prior reminder emails."""
+        authorized, reason = _is_admin_request_authorized()
+        if not authorized:
+            return {"success": False, "message": reason}, 403
+
+        result = _send_next_day_appointment_reminders()
+        return {
+            "success": True,
+            "message": "Reminder job completed",
+            "stats": result,
+        }, 200
+
+
+def _build_email_recipients(user_email: str | None = None) -> tuple[list[str], str | None]:
+    """Build normalized recipient list and return admin email separately."""
+    admin_email_raw = str(current_app.config.get("ADMIN_EMAIL", "")).strip().lower()
+    admin_email = admin_email_raw or None
+    recipients: list[str] = []
+    seen: set[str] = set()
+
+    for email in [user_email, admin_email]:
+        if not email:
+            continue
+        normalized = email.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        recipients.append(normalized)
+
+    return recipients, admin_email
+
+
+def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
+    """Send an email using SMTP settings from app config."""
+    mail_server = str(current_app.config.get("MAIL_SERVER", "")).strip()
+    mail_port = int(current_app.config.get("MAIL_PORT", 587))
+    mail_username = str(current_app.config.get("MAIL_USERNAME", "")).strip()
+    mail_password = str(current_app.config.get("MAIL_PASSWORD", "")).strip()
+    mail_use_tls = bool(current_app.config.get("MAIL_USE_TLS", True))
+    mail_use_ssl = bool(current_app.config.get("MAIL_USE_SSL", False))
+    mail_from = str(current_app.config.get("MAIL_FROM", "")).strip() or mail_username
+
+    if not mail_server:
+        logger.warning("Skipping email (MAIL_SERVER not configured). Subject: %s", subject)
+        return False
+    if not mail_from:
+        logger.warning("Skipping email (MAIL_FROM or MAIL_USERNAME not configured). Subject: %s", subject)
+        return False
+    if not recipients:
+        logger.warning("Skipping email (no recipients). Subject: %s", subject)
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = mail_from
+    msg["To"] = ", ".join(recipients)
+    msg.set_content(body)
+
+    try:
+        if mail_use_ssl:
+            with smtplib.SMTP_SSL(mail_server, mail_port, timeout=15) as smtp:
+                if mail_username and mail_password:
+                    smtp.login(mail_username, mail_password)
+                smtp.send_message(msg)
+        else:
+            with smtplib.SMTP(mail_server, mail_port, timeout=15) as smtp:
+                if mail_use_tls:
+                    smtp.starttls()
+                if mail_username and mail_password:
+                    smtp.login(mail_username, mail_password)
+                smtp.send_message(msg)
+    except Exception as e:
+        logger.error("Failed to send email '%s': %s", subject, e, exc_info=True)
+        return False
+
+    logger.info("Email sent successfully. Subject: %s, Recipients: %s", subject, recipients)
+    return True
+
+
+def _send_user_and_admin_emails(
+    user_email: str,
+    user_subject: str,
+    user_body: str,
+    admin_subject: str,
+    admin_body: str,
+) -> bool:
+    """Send user and admin notifications for a business event."""
+    _, admin_email = _build_email_recipients(user_email)
+    user_sent = _send_email(user_subject, user_body, [user_email])
+
+    if admin_email and admin_email != user_email.strip().lower():
+        _send_email(admin_subject, admin_body, [admin_email])
+
+    return user_sent
+
+
+def _format_appointment_details(appointment_date: date, appointment_time: str, notes: str | None) -> str:
+    """Render appointment details for outbound notifications."""
+    notes_text = notes if notes else "(no notes provided)"
+    return (
+        f"Date: {appointment_date.isoformat()}\n"
+        f"Time: {appointment_time}\n"
+        f"Notes: {notes_text}"
+    )
+
+
+def _send_registration_notifications(user: User) -> None:
+    """Send registration confirmation emails to user and admin."""
+    user_subject = "Welcome to Bara-Kshaar - Registration successful"
+    user_body = (
+        f"Hello {user.username},\n\n"
+        "Your registration was successful.\n"
+        "You can now log in and manage your health assessments and appointments.\n\n"
+        "Regards,\n"
+        "Bara-Kshaar Team"
+    )
+
+    admin_subject = f"New user registration: {user.username}"
+    admin_body = (
+        "A new user has registered on Bara-Kshaar.\n\n"
+        f"Username: {user.username}\n"
+        f"Email: {user.email}\n"
+        f"Registered at (UTC): {datetime.utcnow().isoformat(timespec='seconds')}"
+    )
+
+    _send_user_and_admin_emails(user.email, user_subject, user_body, admin_subject, admin_body)
+
+
+def _send_appointment_created_notifications(user: User, appointment: Appointment) -> None:
+    """Send appointment creation notifications to user and admin."""
+    details = _format_appointment_details(
+        appointment.appointment_date,
+        appointment.appointment_time,
+        appointment.notes,
+    )
+
+    user_subject = "Appointment booked successfully"
+    user_body = (
+        f"Hello {user.username},\n\n"
+        "Your appointment has been booked.\n\n"
+        f"{details}\n\n"
+        "Regards,\n"
+        "Bara-Kshaar Team"
+    )
+
+    admin_subject = f"New appointment booked by {user.username}"
+    admin_body = (
+        "A new appointment has been created.\n\n"
+        f"User: {user.username} ({user.email})\n"
+        f"Appointment ID: {appointment.id}\n"
+        f"{details}"
+    )
+
+    _send_user_and_admin_emails(user.email, user_subject, user_body, admin_subject, admin_body)
+
+
+def _send_appointment_updated_notifications(
+    user: User,
+    appointment: Appointment,
+    old_date: date,
+    old_time: str,
+    old_notes: str | None,
+) -> None:
+    """Send appointment update notifications to user and admin."""
+    old_details = _format_appointment_details(old_date, old_time, old_notes)
+    new_details = _format_appointment_details(
+        appointment.appointment_date,
+        appointment.appointment_time,
+        appointment.notes,
+    )
+
+    user_subject = "Appointment updated successfully"
+    user_body = (
+        f"Hello {user.username},\n\n"
+        "Your appointment has been updated.\n\n"
+        "Previous details:\n"
+        f"{old_details}\n\n"
+        "Updated details:\n"
+        f"{new_details}\n\n"
+        "Regards,\n"
+        "Bara-Kshaar Team"
+    )
+
+    admin_subject = f"Appointment updated by {user.username}"
+    admin_body = (
+        "An appointment has been updated.\n\n"
+        f"User: {user.username} ({user.email})\n"
+        f"Appointment ID: {appointment.id}\n\n"
+        "Previous details:\n"
+        f"{old_details}\n\n"
+        "Updated details:\n"
+        f"{new_details}"
+    )
+
+    _send_user_and_admin_emails(user.email, user_subject, user_body, admin_subject, admin_body)
+
+
+def _send_appointment_deleted_notifications(
+    user: User,
+    appointment_id: int,
+    deleted_date: date,
+    deleted_time: str,
+    deleted_notes: str | None,
+) -> None:
+    """Send appointment deletion notifications to user and admin."""
+    deleted_details = _format_appointment_details(deleted_date, deleted_time, deleted_notes)
+
+    user_subject = "Appointment deleted"
+    user_body = (
+        f"Hello {user.username},\n\n"
+        "Your appointment has been deleted.\n\n"
+        f"Deleted appointment details:\n{deleted_details}\n\n"
+        "Regards,\n"
+        "Bara-Kshaar Team"
+    )
+
+    admin_subject = f"Appointment deleted by {user.username}"
+    admin_body = (
+        "An appointment has been deleted.\n\n"
+        f"User: {user.username} ({user.email})\n"
+        f"Appointment ID: {appointment_id}\n"
+        f"Deleted appointment details:\n{deleted_details}"
+    )
+
+    _send_user_and_admin_emails(user.email, user_subject, user_body, admin_subject, admin_body)
+
+
+def _send_next_day_appointment_reminders() -> dict[str, int]:
+    """Send reminder emails for appointments scheduled for tomorrow."""
+    tomorrow = datetime.utcnow().date() + timedelta(days=1)
+    appointments = Appointment.query.filter_by(appointment_date=tomorrow).all()
+
+    notified_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    for appointment in appointments:
+        existing_log = AppointmentReminder.query.filter_by(
+            appointment_id=appointment.id,
+            reminder_date=tomorrow,
+        ).first()
+        if existing_log:
+            skipped_count += 1
+            continue
+
+        user = db.session.get(User, appointment.user_id)
+        if not user:
+            failed_count += 1
+            continue
+
+        details = _format_appointment_details(
+            appointment.appointment_date,
+            appointment.appointment_time,
+            appointment.notes,
+        )
+
+        user_subject = "Reminder: Your appointment is tomorrow"
+        user_body = (
+            f"Hello {user.username},\n\n"
+            "This is a reminder that your appointment is scheduled for tomorrow.\n\n"
+            f"{details}\n\n"
+            "Regards,\n"
+            "Bara-Kshaar Team"
+        )
+
+        admin_subject = f"Reminder sent: {user.username}'s appointment tomorrow"
+        admin_body = (
+            "A next-day appointment reminder has been processed.\n\n"
+            f"User: {user.username} ({user.email})\n"
+            f"Appointment ID: {appointment.id}\n"
+            f"{details}"
+        )
+
+        user_sent = _send_user_and_admin_emails(
+            user.email,
+            user_subject,
+            user_body,
+            admin_subject,
+            admin_body,
+        )
+        if not user_sent:
+            failed_count += 1
+            continue
+
+        reminder_log = AppointmentReminder(
+            appointment_id=appointment.id,
+            reminder_date=tomorrow,
+        )
+        db.session.add(reminder_log)
+        try:
+            db.session.commit()
+            notified_count += 1
+        except IntegrityError:
+            db.session.rollback()
+            skipped_count += 1
+        except Exception as e:
+            db.session.rollback()
+            logger.error(
+                "Error saving reminder log for appointment %s: %s",
+                appointment.id,
+                e,
+                exc_info=True,
+            )
+            failed_count += 1
+
+    logger.info(
+        "Next-day reminder run completed. Notified=%s, Skipped=%s, Failed=%s, Total=%s",
+        notified_count,
+        skipped_count,
+        failed_count,
+        len(appointments),
+    )
+    return {
+        "notified": notified_count,
+        "skipped_already_sent": skipped_count,
+        "failed": failed_count,
+        "total_candidates": len(appointments),
+    }
+
+
+def _is_admin_request_authorized() -> tuple[bool, str]:
+    """Authorize reminder endpoint via admin session email or API token."""
+    configured_token = str(current_app.config.get("ADMIN_API_TOKEN", "")).strip()
+    provided_token = request.headers.get("X-Admin-Token", "").strip()
+    if configured_token and provided_token and secrets.compare_digest(provided_token, configured_token):
+        return True, "authorized-by-token"
+
+    current_user = _get_current_user()
+    admin_email = str(current_app.config.get("ADMIN_EMAIL", "")).strip().lower()
+    if current_user and admin_email and current_user.email.strip().lower() == admin_email:
+        return True, "authorized-by-admin-user"
+
+    return False, "Admin authorization required (admin login or X-Admin-Token)."
 
 
 def _validate_dob_format(dob: str) -> bool:
@@ -632,6 +1010,22 @@ def _merge_ranked_remedies(
         ),
     )
     return ranked_merged[:max_results]
+
+
+def _merge_unique_salts(*salt_lists: list[str]) -> list[str]:
+    """Merge salt lists while preserving first-seen order and removing duplicates."""
+    merged: list[str] = []
+    seen: set[str] = set()
+
+    for salt_list in salt_lists:
+        for salt in salt_list:
+            key = salt.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(salt)
+
+    return merged
 
 
 def _validate_time_format(time_str: str) -> bool:
