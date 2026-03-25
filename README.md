@@ -36,6 +36,7 @@ A minimal Flask application that lets you search the 12 tissue‑salt remedies.
 | /api/appointments/{appointment_id} | PUT | Yes (session) | Update existing appointment date, time, or notes. |
 | /api/appointments/{appointment_id} | DELETE | Yes (session) | Delete existing appointment. |
 | /api/admin/send-appointment-reminders | POST | Admin | Trigger one-day-prior reminder job. Admin via X-Admin-Token header or admin session email. |
+| /api/admin/test-email | POST | Admin | Send one SMTP test email. Body supports: to, subject, body. |
 
 ## Setup
 
@@ -110,6 +111,17 @@ curl -X POST http://localhost:5000/api/admin/send-appointment-reminders \
 
 The reminder system prevents duplicate reminders by recording one reminder per appointment per reminder day.
 
+Send a one-off SMTP test email through admin API:
+
+```bash
+curl -X POST http://localhost:5000/api/admin/test-email \
+   -H "Content-Type: application/json" \
+   -H "X-Admin-Token: your-admin-api-token" \
+   -d '{"to":"you@example.com","subject":"SMTP Test","body":"Hello from Bara-Kshaar"}'
+```
+
+If `to` is omitted, the endpoint falls back to `ADMIN_EMAIL`.
+
 In production, schedule the above command to run once daily (for example via a cron job or your hosting provider's scheduler).
 
 ## Render deployment notes
@@ -118,6 +130,25 @@ In production, schedule the above command to run once daily (for example via a c
 - Set mail variables in Render under your service's Environment tab.
 - At minimum, configure `MAIL_SERVER` (or `SMTP_SERVER`) and `MAIL_FROM` (or `EMAIL_FROM`).
 - If your SMTP provider requires authentication, also configure username and password.
+
+### Gmail SMTP quick setup
+
+Use these values for Gmail delivery:
+
+```ini
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=True
+MAIL_USE_SSL=False
+MAIL_USERNAME=yourname@gmail.com
+MAIL_PASSWORD=your-16-char-google-app-password
+MAIL_FROM=yourname@gmail.com
+```
+
+Notes:
+- Use a Google App Password (not your normal Gmail account password).
+- App Passwords require 2-Step Verification enabled on the Google account.
+- Keep `MAIL_USE_TLS=True` and `MAIL_USE_SSL=False` for port `587`.
 - On startup, the app now logs whether mail configuration is complete so you can verify the Render deployment picked up the variables.
 
 ## Project layout

@@ -38,6 +38,10 @@ class User(db.Model):
 
 class Appointment(db.Model):
     __tablename__ = "appointments"
+    __table_args__ = (
+        db.Index("ix_appointments_user_date_time", "user_id", "appointment_date", "appointment_time"),
+        db.Index("ix_appointments_user_id", "user_id"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
@@ -70,6 +74,8 @@ class AppointmentReminder(db.Model):
     __tablename__ = "appointment_reminders"
     __table_args__ = (
         db.UniqueConstraint("appointment_id", "reminder_date", name="uq_appointment_reminder_day"),
+        db.Index("ix_appointment_reminders_appointment_id", "appointment_id"),
+        db.Index("ix_appointment_reminders_reminder_date", "reminder_date"),
     )
 
     id = db.Column(db.Integer, primary_key=True)

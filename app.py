@@ -95,14 +95,30 @@ class RankedRemedy(TypedDict):
     score: int
 
 
+def _to_bool(value: object, default: bool) -> bool:
+    """Parse bool-like config values safely (supports env strings like 'False')."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return default
+    return bool(value)
+
+
 def _get_mail_settings(config: dict | object) -> dict[str, object]:
     """Read normalized mail settings from Flask config and report missing requirements."""
     mail_server = str(config.get("MAIL_SERVER", "")).strip()
     mail_port = int(config.get("MAIL_PORT", 587))
     mail_username = str(config.get("MAIL_USERNAME", "")).strip()
     mail_password = str(config.get("MAIL_PASSWORD", "")).strip()
-    mail_use_tls = bool(config.get("MAIL_USE_TLS", True))
-    mail_use_ssl = bool(config.get("MAIL_USE_SSL", False))
+    mail_use_tls = _to_bool(config.get("MAIL_USE_TLS", True), default=True)
+    mail_use_ssl = _to_bool(config.get("MAIL_USE_SSL", False), default=False)
     mail_from = str(config.get("MAIL_FROM", "")).strip() or mail_username
     admin_email = str(config.get("ADMIN_EMAIL", "")).strip().lower()
 
@@ -145,6 +161,10 @@ def _log_startup_configuration(app: Flask) -> None:
         "Email notifications are disabled because required mail configuration is missing: %s. "
         "On Render, set these values in the service Environment tab rather than relying on a local .env file.",
         ", ".join(mail_settings["missing"]),
+    )
+    logger.warning(
+        "For Gmail SMTP use: MAIL_SERVER=smtp.gmail.com, MAIL_PORT=587, MAIL_USE_TLS=True, "
+        "MAIL_USE_SSL=False, MAIL_USERNAME=<gmail>, MAIL_PASSWORD=<google-app-password>."
     )
 
 
@@ -584,6 +604,45 @@ def _register_routes(app: Flask) -> None:
             "success": True,
             "message": "Reminder job completed",
             "stats": result,
+        }, 200
+
+    @app.route("/api/admin/test-email", methods=["POST"])
+    def admin_test_email():
+        """Admin endpoint to send a one-off SMTP test email."""
+        authorized, reason = _is_admin_request_authorized()
+        if not authorized:
+            return {"success": False, "message": reason}, 403
+
+        payload = request.get_json(silent=True) or {}
+        recipient = str(payload.get("to", "")).strip().lower()
+        if not recipient:
+            recipient = str(current_app.config.get("ADMIN_EMAIL", "")).strip().lower()
+
+        if not recipient:
+            return {
+                "success": False,
+                "message": "Recipient is required. Provide JSON {\"to\": \"email@example.com\"} or set ADMIN_EMAIL.",
+            }, 400
+
+        subject = str(payload.get("subject", "")).strip() or "Bara-Kshaar SMTP test email"
+        body = str(payload.get("body", "")).strip() or (
+            "This is a test email from Bara-Kshaar.\n\n"
+            f"Sent at (UTC): {datetime.utcnow().isoformat(timespec='seconds')}\n"
+            f"Authorized via: {reason}"
+        )
+
+        sent = _send_email(subject, body, [recipient])
+        if not sent:
+            return {
+                "success": False,
+                "message": "SMTP send failed. Check logs for provider/auth details.",
+                "recipient": recipient,
+            }, 502
+
+        return {
+            "success": True,
+            "message": "Test email sent",
+            "recipient": recipient,
         }, 200
 
 
