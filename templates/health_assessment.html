@@ -70,6 +70,7 @@
     .form-group {
       display: grid;
       gap: 0.35rem;
+      position: relative;
     }
     label {
       color: #1f3340;
@@ -122,6 +123,45 @@
       margin: 0;
       color: #56656f;
       font-size: 0.86rem;
+    }
+    .autocomplete-list {
+      position: absolute;
+      top: calc(100% - 0.2rem);
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #bfd2df;
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+      max-height: 220px;
+      overflow-y: auto;
+      z-index: 50;
+      display: none;
+    }
+    .autocomplete-list.show {
+      display: block;
+    }
+    .autocomplete-item {
+      width: 100%;
+      border: none;
+      border-bottom: 1px solid #eef3f7;
+      background: #fff;
+      color: #1f3340;
+      text-align: left;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.93rem;
+      cursor: pointer;
+      border-radius: 0;
+      font-weight: 500;
+    }
+    .autocomplete-item:last-child {
+      border-bottom: none;
+    }
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+      background: #eaf4ee;
+      color: #1e5138;
     }
     button {
       border: none;
@@ -423,6 +463,7 @@
           {% endif %}
           <p class="salt-row"><strong>Current Ailment 1:</strong> {{ ailment1_salts|join(', ') if ailment1_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>Current Ailment 2:</strong> {{ ailment2_salts|join(', ') if ailment2_salts else 'No matches found' }}</p>
+          <p class="salt-row"><strong>Current Ailment 3:</strong> {{ ailment3_salts|join(', ') if ailment3_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>Family History:</strong> {{ family_history_salts|join(', ') if family_history_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>All Recommended Salts (month + remedies):</strong></p>
           {% if all_recommended_salts %}
@@ -491,6 +532,7 @@
             <span>Describe symptoms, severity, duration, etc.</span>
             <span id="count1">0/400</span>
           </div>
+          <div id="ailment1_autocomplete" class="autocomplete-list" aria-label="Ailment 1 suggestions"></div>
         </div>
 
         <!-- Current Ailment 2 -->
@@ -510,6 +552,27 @@
             <span>Describe symptoms, severity, duration, etc.</span>
             <span id="count2">0/400</span>
           </div>
+          <div id="ailment2_autocomplete" class="autocomplete-list" aria-label="Ailment 2 suggestions"></div>
+        </div>
+
+        <!-- Current Ailment 3 -->
+        <div class="form-group">
+          <label for="ailment3">
+            Current Ailment 3
+            <span class="required">*</span>
+          </label>
+          <textarea
+            id="ailment3"
+            name="ailment3"
+            placeholder="Describe your third current ailment..."
+            maxlength="400"
+            required
+          >{{ submitted_ailment3 or '' }}</textarea>
+          <div class="char-count">
+            <span>Describe symptoms, severity, duration, etc.</span>
+            <span id="count3">0/400</span>
+          </div>
+          <div id="ailment3_autocomplete" class="autocomplete-list" aria-label="Ailment 3 suggestions"></div>
         </div>
 
         <!-- Family History -->
@@ -527,8 +590,9 @@
           >{{ submitted_family_history or '' }}</textarea>
           <div class="char-count">
             <span>Include any hereditary conditions or concerns</span>
-            <span id="count3">0/400</span>
+            <span id="count4">0/400</span>
           </div>
+          <div id="family_history_autocomplete" class="autocomplete-list" aria-label="Family history suggestions"></div>
         </div>
 
         <!-- Buttons -->
@@ -646,7 +710,113 @@
 
     bindCounter('ailment1', 'count1');
     bindCounter('ailment2', 'count2');
-    bindCounter('family_history', 'count3');
+    bindCounter('ailment3', 'count3');
+    bindCounter('family_history', 'count4');
+
+    function bindAutocomplete(fieldId, listId) {
+      const field = document.getElementById(fieldId);
+      const listEl = document.getElementById(listId);
+      if (!field || !listEl) return;
+
+      let activeIndex = -1;
+      let lastRequestId = 0;
+
+      const closeList = () => {
+        listEl.innerHTML = '';
+        listEl.classList.remove('show');
+        activeIndex = -1;
+      };
+
+      const applySuggestion = (value) => {
+        field.value = value;
+        field.dispatchEvent(new Event('input'));
+        closeList();
+      };
+
+      const renderSuggestions = (items) => {
+        if (!items.length) {
+          closeList();
+          return;
+        }
+
+        listEl.innerHTML = '';
+        items.forEach((item, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'autocomplete-item';
+          button.textContent = item;
+          button.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            applySuggestion(item);
+          });
+          if (index === 0) {
+            button.classList.add('active');
+            activeIndex = 0;
+          }
+          listEl.appendChild(button);
+        });
+        listEl.classList.add('show');
+      };
+
+      const loadSuggestions = (term) => {
+        if (term.length < 2) {
+          closeList();
+          return;
+        }
+
+        lastRequestId += 1;
+        const requestId = lastRequestId;
+        fetch(`/api/health-assessment/autofill?q=${encodeURIComponent(term)}&limit=8`)
+          .then((res) => (res.ok ? res.json() : { suggestions: [] }))
+          .then((data) => {
+            if (requestId !== lastRequestId) return;
+            const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+            renderSuggestions(suggestions);
+          })
+          .catch(() => closeList());
+      };
+
+      let typingTimer = null;
+      field.addEventListener('input', () => {
+        if (typingTimer) clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => loadSuggestions(field.value.trim()), 180);
+      });
+
+      field.addEventListener('keydown', (event) => {
+        const items = Array.from(listEl.querySelectorAll('.autocomplete-item'));
+        if (!listEl.classList.contains('show') || !items.length) return;
+
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          activeIndex = (activeIndex + 1) % items.length;
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          activeIndex = (activeIndex - 1 + items.length) % items.length;
+        } else if (event.key === 'Enter' && activeIndex >= 0) {
+          event.preventDefault();
+          applySuggestion(items[activeIndex].textContent || '');
+          return;
+        } else if (event.key === 'Escape') {
+          closeList();
+          return;
+        } else {
+          return;
+        }
+
+        items.forEach((item, idx) => {
+          item.classList.toggle('active', idx === activeIndex);
+        });
+      });
+
+      field.addEventListener('blur', () => {
+        setTimeout(closeList, 120);
+      });
+    }
+
+    bindAutocomplete('ailment1', 'ailment1_autocomplete');
+    bindAutocomplete('ailment2', 'ailment2_autocomplete');
+    bindAutocomplete('ailment3', 'ailment3_autocomplete');
+    bindAutocomplete('family_history', 'family_history_autocomplete');
 
     function updateCountStyle(elementId, length) {
       const countEl = document.getElementById(elementId);
