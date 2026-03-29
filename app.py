@@ -393,6 +393,7 @@ def _register_routes(app: Flask) -> None:
             ailment1 = request.form.get("ailment1", "").strip()
             ailment2 = request.form.get("ailment2", "").strip()
             ailment3 = request.form.get("ailment3", "").strip()
+            daily_routine = request.form.get("daily_routine", "").strip()
             family_history = request.form.get("family_history", "").strip()
 
             form_context = {
@@ -402,6 +403,7 @@ def _register_routes(app: Flask) -> None:
                 "submitted_ailment1": ailment1,
                 "submitted_ailment2": ailment2,
                 "submitted_ailment3": ailment3,
+                "submitted_daily_routine": daily_routine,
                 "submitted_family_history": family_history,
             }
 
@@ -416,12 +418,18 @@ def _register_routes(app: Flask) -> None:
                 return _render_health_assessment(**form_context), 400
 
             # Validate character limits
-            if len(ailment1) > 400 or len(ailment2) > 400 or len(ailment3) > 400 or len(family_history) > 400:
+            if (
+                len(ailment1) > 400
+                or len(ailment2) > 400
+                or len(ailment3) > 400
+                or len(daily_routine) > 400
+                or len(family_history) > 400
+            ):
                 flash("One or more fields exceed the 400 character limit.", "error")
                 return _render_health_assessment(**form_context), 400
 
             print(
-                f"Health assessment submitted - DOB: {dob}, Height: {height or 'n/a'}, Weight: {weight or 'n/a'}, Ailments: {len(ailment1)} / {len(ailment2)} / {len(ailment3)} chars, Family history: {len(family_history)} chars",
+                f"Health assessment submitted - DOB: {dob}, Height: {height or 'n/a'}, Weight: {weight or 'n/a'}, Ailments: {len(ailment1)} / {len(ailment2)} / {len(ailment3)} chars, Daily routine: {len(daily_routine)} chars, Family history: {len(family_history)} chars",
                 flush=True,
             )
             logger.info(f"Health assessment submitted - DOB: {dob}")
@@ -434,6 +442,7 @@ def _register_routes(app: Flask) -> None:
                 "ailment1": ailment1,
                 "ailment2": ailment2,
                 "ailment3": ailment3,
+                "daily_routine": daily_routine,
                 "family_history": family_history,
             }
 

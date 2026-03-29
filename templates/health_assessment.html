@@ -37,6 +37,52 @@
       text-align: center;
       margin-bottom: 1.2rem;
       grid-column: 1 / -1;
+      position: relative;
+    }
+    .auth-actions {
+      position: absolute;
+      top: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .auth-actions form {
+      display: block;
+      gap: 0;
+      margin: 0;
+    }
+    .auth-greeting {
+      color: #1f3340;
+      font-size: 0.9rem;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid #d7e4ec;
+      border-radius: 999px;
+      padding: 0.35rem 0.7rem;
+    }
+    .auth-btn {
+      display: inline-block;
+      border: 1px solid #2d6447;
+      background: #3f8b61;
+      color: #fff;
+      border-radius: 999px;
+      padding: 0.35rem 0.85rem;
+      font-size: 0.86rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      line-height: 1.2;
+    }
+    .auth-btn:hover {
+      background: #2d6447;
+    }
+    @media (max-width: 680px) {
+      .auth-actions {
+        position: static;
+        justify-content: center;
+        margin-top: 0.75rem;
+      }
     }
     .header img {
       width: 140px;
@@ -437,6 +483,16 @@
 <body data-current-user="{{ 'true' if current_user else 'false' }}">
   <div class="container">
     <div class="header">
+      <div class="auth-actions">
+        {% if current_user %}
+          <span class="auth-greeting">Hello, {{ current_user.username }}</span>
+          <form method="post" action="{{ url_for('logout') }}">
+            <button type="submit" class="auth-btn">Logout</button>
+          </form>
+        {% else %}
+          <a href="{{ url_for('login') }}" class="auth-btn">Login</a>
+        {% endif %}
+      </div>
       <img src="{{ url_for('static', filename='12_tsalts.png') }}" alt="12 Tissue Salts">
       <h1>Health Assessment & Appointments</h1>
       <p class="subtitle">Tell us about your health and book a consultation</p>
@@ -461,11 +517,11 @@
           {% if deficient_salt %}
             <p class="salt-row"><strong>Birth Month Salt:</strong> {{ deficient_salt }} (month {{ birth_month }})</p>
           {% endif %}
-          <p class="salt-row"><strong>Current Ailment 1:</strong> {{ ailment1_salts|join(', ') if ailment1_salts else 'No matches found' }}</p>
-            <p class="salt-row"><strong>Ailments from Birth /Childhood:</strong> {{ ailment2_salts|join(', ') if ailment2_salts else 'No matches found' }}</p>
-          <p class="salt-row"><strong>Current Ailment 3:</strong> {{ ailment3_salts|join(', ') if ailment3_salts else 'No matches found' }}</p>
+          <p class="salt-row"><strong>Current Major Ailments:</strong> {{ ailment1_salts|join(', ') if ailment1_salts else 'No matches found' }}</p>
+            <p class="salt-row"><strong>Secondary ailments:</strong> {{ ailment2_salts|join(', ') if ailment2_salts else 'No matches found' }}</p>
+          <p class="salt-row"><strong>Complains since birth:</strong> {{ ailment3_salts|join(', ') if ailment3_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>Family History:</strong> {{ family_history_salts|join(', ') if family_history_salts else 'No matches found' }}</p>
-          <p class="salt-row"><strong>All Recommended Salts (month + remedies):</strong></p>
+          <p class="salt-row"><strong>All Recommended Salts:</strong></p>
           {% if all_recommended_salts %}
             <ul class="salt-list">
               {% for salt in all_recommended_salts %}
@@ -529,7 +585,7 @@
         <!-- Current Ailment 1 -->
         <div class="form-group">
           <label for="ailment1">
-            Current Ailment 1
+            Current Major Ailments
             <span class="required">*</span>
           </label>
           <textarea 
@@ -549,7 +605,7 @@
         <!-- Current Ailment 2 -->
         <div class="form-group">
           <label for="ailment2">
-            Ailments from Birth /Childhood
+            Secondary ailments
             <span class="required">*</span>
           </label>
           <textarea 
@@ -569,7 +625,7 @@
         <!-- Current Ailment 3 -->
         <div class="form-group">
           <label for="ailment3">
-            Current Ailment 3
+            Complains since birth
             <span class="required">*</span>
           </label>
           <textarea
@@ -584,6 +640,21 @@
             <span id="count3">0/400</span>
           </div>
           <div id="ailment3_autocomplete" class="autocomplete-list" aria-label="Ailment 3 suggestions"></div>
+        </div>
+
+        <!-- Daily Routine -->
+        <div class="form-group">
+          <label for="daily_routine">Daily Routine</label>
+          <textarea
+            id="daily_routine"
+            name="daily_routine"
+            placeholder="Describe your daily routine, sleep, food, work, and activity patterns..."
+            maxlength="400"
+          >{{ submitted_daily_routine or '' }}</textarea>
+          <div class="char-count">
+            <span>Share habits that may affect your health.</span>
+            <span id="count5">0/400</span>
+          </div>
         </div>
 
         <!-- Family History -->
@@ -725,6 +796,7 @@
     bindCounter('ailment2', 'count2');
     bindCounter('ailment3', 'count3');
     bindCounter('family_history', 'count4');
+    bindCounter('daily_routine', 'count5');
 
     function bindAutocomplete(fieldId, listId) {
       const field = document.getElementById(fieldId);
