@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
-from models import Appointment, AppointmentReminder, Remedy, User, db
+from models import AilmentCase, Appointment, AppointmentReminder, Remedy, User, db
 from seeds import REMEDY_SEEDS
 
 # Configure logging
@@ -320,6 +320,7 @@ def _register_routes(app: Flask) -> None:
 
             session["user_id"] = user.id
             session["username"] = user.username
+            session["email"] = user.email
             flash("You are now logged in.", "success")
             return redirect(url_for("health_assessment"))
 
@@ -374,6 +375,7 @@ def _register_routes(app: Flask) -> None:
 
             session["user_id"] = new_user.id
             session["username"] = new_user.username
+            session["email"] = new_user.email
             flash("Registration successful. Welcome!", "success")
             return redirect(url_for("health_assessment"))
 
@@ -428,6 +430,7 @@ def _register_routes(app: Flask) -> None:
     def health_assessment():
         """Health assessment form to collect user health information."""
         if request.method == "POST":
+            current_user = _get_current_user()
             dob = request.form.get("dob", "").strip()
             height = request.form.get("height", "").strip()
             weight = request.form.get("weight", "").strip()
@@ -469,11 +472,53 @@ def _register_routes(app: Flask) -> None:
                 flash("One or more fields exceed the 400 character limit.", "error")
                 return _render_health_assessment(**form_context), 400
 
+            case_name = str(session.get("username", "")).strip()
+            case_email = str(session.get("email", "")).strip().lower()
+
+            if current_user:
+                if not case_name:
+                    case_name = current_user.username
+                if not case_email:
+                    case_email = current_user.email.strip().lower()
+
+            if not case_name or not case_email:
+                flash("Please log in to submit and save your health assessment.", "error")
+                return redirect(url_for("login"))
+
+            ailment_case = AilmentCase(
+                user_id=current_user.id if current_user else None,
+                name=case_name,
+                email=case_email,
+                dob=dob,
+                height=height or None,
+                weight=weight or None,
+                ailment1=ailment1,
+                ailment2=ailment2,
+                ailment3=ailment3,
+                daily_routine=daily_routine or None,
+                family_history=family_history,
+            )
+
+            try:
+                db.session.add(ailment_case)
+                db.session.commit()
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                logger.error("Error saving ailment case: %s", e, exc_info=True)
+                flash("Unable to save your health assessment right now. Please try again.", "error")
+                return _render_health_assessment(**form_context), 500
+
             print(
                 f"Health assessment submitted - DOB: {dob}, Height: {height or 'n/a'}, Weight: {weight or 'n/a'}, Ailments: {len(ailment1)} / {len(ailment2)} / {len(ailment3)} chars, Daily routine: {len(daily_routine)} chars, Family history: {len(family_history)} chars",
                 flush=True,
             )
-            logger.info(f"Health assessment submitted - DOB: {dob}")
+            logger.info(
+                "Health assessment submitted and saved - case_id=%s user=%s email=%s DOB=%s",
+                ailment_case.id,
+                case_name,
+                case_email,
+                dob,
+            )
 
             # Store in session for now (or redirect to results)
             session["health_data"] = {

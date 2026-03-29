@@ -31,6 +31,12 @@ class User(db.Model):
         lazy=True,
         cascade="all, delete-orphan",
     )
+    ailment_cases = db.relationship(
+        "AilmentCase",
+        backref="user",
+        lazy=True,
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.username}>"
@@ -85,3 +91,28 @@ class AppointmentReminder(db.Model):
 
     def __repr__(self) -> str:
         return f"<AppointmentReminder appointment={self.appointment_id} day={self.reminder_date}>"
+
+
+class AilmentCase(db.Model):
+    __tablename__ = "ailment_case"
+    __table_args__ = (
+        db.Index("ix_ailment_case_user_id", "user_id"),
+        db.Index("ix_ailment_case_created_at", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    name = db.Column(db.String(80), nullable=False)
+    email = db.Column(db.String(255), nullable=False)
+    dob = db.Column(db.String(5), nullable=False)  # MM/DD
+    height = db.Column(db.String(50), nullable=True)
+    weight = db.Column(db.String(50), nullable=True)
+    ailment1 = db.Column(db.Text, nullable=False)
+    ailment2 = db.Column(db.Text, nullable=False)
+    ailment3 = db.Column(db.Text, nullable=False)
+    daily_routine = db.Column(db.Text, nullable=True)
+    family_history = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<AilmentCase {self.id} user={self.user_id} email={self.email}>"
