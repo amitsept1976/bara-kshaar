@@ -128,6 +128,10 @@ def _get_mail_settings(config: dict | object) -> dict[str, object]:
         missing.append("MAIL_SERVER or SMTP_SERVER")
     if not mail_from:
         missing.append("MAIL_FROM/EMAIL_FROM or MAIL_USERNAME")
+    if mail_username and not mail_password:
+        missing.append("MAIL_PASSWORD (required when MAIL_USERNAME is set)")
+    if mail_use_tls and mail_use_ssl:
+        missing.append("MAIL_USE_TLS and MAIL_USE_SSL cannot both be true")
 
     return {
         "mail_server": mail_server,

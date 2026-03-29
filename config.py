@@ -67,13 +67,32 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
 
     # SMTP email configuration
-    MAIL_SERVER = _env_first("MAIL_SERVER", "SMTP_SERVER")
-    MAIL_PORT = _env_int("MAIL_PORT", "SMTP_PORT", default=587)
-    MAIL_USERNAME = _env_first("MAIL_USERNAME", "SMTP_USERNAME", "EMAIL_HOST_USER")
-    MAIL_PASSWORD = _env_first("MAIL_PASSWORD", "SMTP_PASSWORD", "EMAIL_HOST_PASSWORD")
-    MAIL_USE_TLS = _env_bool("MAIL_USE_TLS", default=True)
-    MAIL_USE_SSL = _env_bool("MAIL_USE_SSL", default=False)
-    MAIL_FROM = _env_first("MAIL_FROM", "EMAIL_FROM", "DEFAULT_FROM_EMAIL", default=MAIL_USERNAME)
+    MAIL_SERVER = _env_first("MAIL_SERVER", "SMTP_SERVER", "EMAIL_HOST")
+    MAIL_PORT = _env_int("MAIL_PORT", "SMTP_PORT", "EMAIL_PORT", default=587)
+    MAIL_USERNAME = _env_first(
+        "MAIL_USERNAME",
+        "SMTP_USERNAME",
+        "SMTP_USER",
+        "EMAIL_HOST_USER",
+        "EMAIL_USER",
+    )
+    MAIL_PASSWORD = _env_first(
+        "MAIL_PASSWORD",
+        "SMTP_PASSWORD",
+        "SMTP_PASS",
+        "EMAIL_HOST_PASSWORD",
+        "EMAIL_PASSWORD",
+    )
+    MAIL_USE_TLS = _env_bool("MAIL_USE_TLS", default=_env_bool("EMAIL_USE_TLS", default=True))
+    MAIL_USE_SSL = _env_bool("MAIL_USE_SSL", default=_env_bool("EMAIL_USE_SSL", default=False))
+    MAIL_FROM = _env_first(
+        "MAIL_FROM",
+        "SMTP_FROM",
+        "EMAIL_FROM",
+        "FROM_EMAIL",
+        "DEFAULT_FROM_EMAIL",
+        default=MAIL_USERNAME,
+    )
 
     # Admin notifications
     ADMIN_EMAIL = _env_first("ADMIN_EMAIL", "ALERT_EMAIL")
