@@ -434,7 +434,7 @@
     }
   </style>
 </head>
-<body>
+<body data-current-user="{{ 'true' if current_user else 'false' }}">
   <div class="container">
     <div class="header">
       <img src="{{ url_for('static', filename='12_tsalts.png') }}" alt="12 Tissue Salts">
@@ -462,7 +462,7 @@
             <p class="salt-row"><strong>Birth Month Salt:</strong> {{ deficient_salt }} (month {{ birth_month }})</p>
           {% endif %}
           <p class="salt-row"><strong>Current Ailment 1:</strong> {{ ailment1_salts|join(', ') if ailment1_salts else 'No matches found' }}</p>
-          <p class="salt-row"><strong>Current Ailment 2:</strong> {{ ailment2_salts|join(', ') if ailment2_salts else 'No matches found' }}</p>
+            <p class="salt-row"><strong>Ailments from Birth /Childhood:</strong> {{ ailment2_salts|join(', ') if ailment2_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>Current Ailment 3:</strong> {{ ailment3_salts|join(', ') if ailment3_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>Family History:</strong> {{ family_history_salts|join(', ') if family_history_salts else 'No matches found' }}</p>
           <p class="salt-row"><strong>All Recommended Salts (month + remedies):</strong></p>
@@ -515,6 +515,34 @@
           <p class="hint">Enter in MM/DD format (e.g., 03/21)</p>
         </div>
 
+        <!-- Height -->
+        <div class="form-group">
+          <label for="height">Height</label>
+          <input
+            type="text"
+            id="height"
+            name="height"
+            value="{{ submitted_height or '' }}"
+            placeholder="Enter height (e.g., 5'8\&quot; or 173 cm)"
+            maxlength="50"
+          >
+          <p class="hint">Use feet/inches or centimeters.</p>
+        </div>
+
+        <!-- Weight -->
+        <div class="form-group">
+          <label for="weight">Weight</label>
+          <input
+            type="text"
+            id="weight"
+            name="weight"
+            value="{{ submitted_weight or '' }}"
+            placeholder="Enter weight (e.g., 70 kg or 154 lb)"
+            maxlength="50"
+          >
+          <p class="hint">Use kilograms or pounds.</p>
+        </div>
+
         <!-- Current Ailment 1 -->
         <div class="form-group">
           <label for="ailment1">
@@ -538,13 +566,13 @@
         <!-- Current Ailment 2 -->
         <div class="form-group">
           <label for="ailment2">
-            Current Ailment 2
+            Ailments from Birth /Childhood
             <span class="required">*</span>
           </label>
           <textarea 
             id="ailment2" 
             name="ailment2" 
-            placeholder="Describe your second current ailment..."
+            placeholder="Describe ailments from birth / childhood..."
             maxlength="400"
             required
           >{{ submitted_ailment2 or '' }}</textarea>
@@ -691,6 +719,8 @@
     let selectedDate = null;
     let editingAppointmentId = null;
     let appointments = {};
+    const isCurrentUser = document.body.dataset.currentUser === 'true';
+    const appointmentsApiUrl = '{{ url_for("api_appointments") }}';
 
     // Character counters
     function bindCounter(fieldId, counterId) {
@@ -838,9 +868,8 @@
     });
 
     // Calendar functions
-    {% if current_user %}
     function loadAppointments() {
-      fetch('{{ url_for("api_appointments") }}')
+      fetch(appointmentsApiUrl)
         .then(res => res.json())
         .then(data => {
           appointments = {};
@@ -980,8 +1009,8 @@
       const notes = document.getElementById('apptNotes').value;
 
       const url = editingAppointmentId 
-        ? `{{ url_for('api_appointments') }}/${editingAppointmentId}`
-        : '{{ url_for("api_appointments") }}';
+        ? `${appointmentsApiUrl}/${editingAppointmentId}`
+        : appointmentsApiUrl;
 
       const method = editingAppointmentId ? 'PUT' : 'POST';
 
@@ -1008,7 +1037,7 @@
     function deleteAppointment(appointmentId) {
       if (!confirm('Are you sure you want to delete this appointment?')) return;
 
-      fetch(`{{ url_for('api_appointments') }}/${appointmentId}`, {
+      fetch(`${appointmentsApiUrl}/${appointmentId}`, {
         method: 'DELETE'
       })
       .then(res => res.json())
@@ -1026,37 +1055,37 @@
       });
     }
 
-    document.getElementById('prevMonth').addEventListener('click', () => {
-      currentMonth--;
-      if (currentMonth < 0) {
-        currentMonth = 11;
-        currentYear--;
-      }
-      renderCalendar();
-    });
+    if (isCurrentUser) {
+      document.getElementById('prevMonth').addEventListener('click', () => {
+        currentMonth--;
+        if (currentMonth < 0) {
+          currentMonth = 11;
+          currentYear--;
+        }
+        renderCalendar();
+      });
 
-    document.getElementById('nextMonth').addEventListener('click', () => {
-      currentMonth++;
-      if (currentMonth > 11) {
-        currentMonth = 0;
-        currentYear++;
-      }
-      renderCalendar();
-    });
+      document.getElementById('nextMonth').addEventListener('click', () => {
+        currentMonth++;
+        if (currentMonth > 11) {
+          currentMonth = 0;
+          currentYear++;
+        }
+        renderCalendar();
+      });
 
-    document.getElementById('bookAppointmentBtn').addEventListener('click', () => {
-      const today = new Date().toISOString().split('T')[0];
-      openAppointmentModal(today);
-    });
+      document.getElementById('bookAppointmentBtn').addEventListener('click', () => {
+        const today = new Date().toISOString().split('T')[0];
+        openAppointmentModal(today);
+      });
+
+      loadAppointments();
+    }
 
     // Close modal on outside click
     document.getElementById('appointmentModal').addEventListener('click', function(e) {
       if (e.target === this) closeModal();
     });
-
-    // Initial load
-    loadAppointments();
-    {% endif %}
   </script>
 </body>
 </html>

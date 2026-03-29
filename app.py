@@ -383,28 +383,40 @@ def _register_routes(app: Flask) -> None:
         """Health assessment form to collect user health information."""
         if request.method == "POST":
             dob = request.form.get("dob", "").strip()
+            height = request.form.get("height", "").strip()
+            weight = request.form.get("weight", "").strip()
             ailment1 = request.form.get("ailment1", "").strip()
             ailment2 = request.form.get("ailment2", "").strip()
             ailment3 = request.form.get("ailment3", "").strip()
             family_history = request.form.get("family_history", "").strip()
 
+            form_context = {
+                "submitted_dob": dob,
+                "submitted_height": height,
+                "submitted_weight": weight,
+                "submitted_ailment1": ailment1,
+                "submitted_ailment2": ailment2,
+                "submitted_ailment3": ailment3,
+                "submitted_family_history": family_history,
+            }
+
             # Validation
             if not all([dob, ailment1, ailment2, ailment3, family_history]):
                 flash("All fields are required.", "error")
-                return _render_health_assessment(), 400
+                return _render_health_assessment(**form_context), 400
 
             # Validate date of birth format (MM/DD)
             if not _validate_dob_format(dob):
                 flash("Date of birth must be in MM/DD format (e.g., 03/21).", "error")
-                return _render_health_assessment(), 400
+                return _render_health_assessment(**form_context), 400
 
             # Validate character limits
             if len(ailment1) > 400 or len(ailment2) > 400 or len(ailment3) > 400 or len(family_history) > 400:
                 flash("One or more fields exceed the 400 character limit.", "error")
-                return _render_health_assessment(), 400
+                return _render_health_assessment(**form_context), 400
 
             print(
-                f"Health assessment submitted - DOB: {dob}, Ailments: {len(ailment1)} / {len(ailment2)} / {len(ailment3)} chars, Family history: {len(family_history)} chars",
+                f"Health assessment submitted - DOB: {dob}, Height: {height or 'n/a'}, Weight: {weight or 'n/a'}, Ailments: {len(ailment1)} / {len(ailment2)} / {len(ailment3)} chars, Family history: {len(family_history)} chars",
                 flush=True,
             )
             logger.info(f"Health assessment submitted - DOB: {dob}")
@@ -412,6 +424,8 @@ def _register_routes(app: Flask) -> None:
             # Store in session for now (or redirect to results)
             session["health_data"] = {
                 "dob": dob,
+                "height": height,
+                "weight": weight,
                 "ailment1": ailment1,
                 "ailment2": ailment2,
                 "ailment3": ailment3,
@@ -458,17 +472,13 @@ def _register_routes(app: Flask) -> None:
             return _render_health_assessment(
                 deficient_salt=deficient_salt,
                 birth_month=month,
-                submitted_dob=dob,
-                submitted_ailment1=ailment1,
-                submitted_ailment2=ailment2,
-                submitted_ailment3=ailment3,
-                submitted_family_history=family_history,
                 ailment1_salts=ailment1_salts,
                 ailment2_salts=ailment2_salts,
                 ailment3_salts=ailment3_salts,
                 family_history_salts=family_history_salts,
                 all_recommended_salts=all_recommended_salts,
                 all_ranked_remedies=all_ranked_remedies,
+                **form_context,
             )
 
         return _render_health_assessment()
