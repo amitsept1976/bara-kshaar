@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Email Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(160deg, #eef7f3, #fefcf5);
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+    }
+    .page {
+      width: 100%;
+      max-width: 520px;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+      padding: 1.4rem;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    .header img {
+      width: 120px;
+      height: auto;
+      display: inline-block;
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      margin: 0;
+      color: #2a5b3e;
+      font-size: 1.45rem;
+    }
+    .subtitle {
+      color: #56656f;
+      font-size: 0.95rem;
+      margin: 0.45rem 0 0;
+    }
+    form {
+      display: grid;
+      gap: 0.9rem;
+    }
+    label {
+      display: grid;
+      gap: 0.35rem;
+      color: #1f3340;
+      font-weight: 600;
+      font-size: 0.92rem;
+    }
+    input {
+      border: 1px solid #bfd2df;
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+      font-size: 1rem;
+    }
+    input:focus {
+      outline: none;
+      border-color: #3f8b61;
+      box-shadow: 0 0 0 3px rgba(63, 139, 97, 0.1);
+    }
+    button {
+      border: none;
+      background: #3f8b61;
+      color: #fff;
+      font-weight: 700;
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover {
+      background: #2d6447;
+    }
+    .hint {
+      margin: 0;
+      color: #56656f;
+      font-size: 0.9rem;
+    }
+    .links {
+      margin-top: 1rem;
+      text-align: center;
+      font-size: 0.95rem;
+    }
+    .links a {
+      color: #2e6786;
+      text-decoration: none;
+      margin: 0 0.35rem;
+    }
+    .links a:hover {
+      text-decoration: underline;
+    }
+    .flash-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1rem;
+    }
+    .flash {
+      padding: 0.65rem 0.8rem;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      font-size: 0.92rem;
+    }
+    .flash.success {
+      background: #e8f7ec;
+      border: 1px solid #8dd6a3;
+      color: #1e6d39;
+    }
+    .flash.error {
+      background: #fdeaea;
+      border: 1px solid #f0aaaa;
+      color: #8d2727;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="header">
+      <img src="{{ url_for('static', filename='12_tsalts.png') }}" alt="12 Tissue Salts">
+      <h1>Email Setup Test</h1>
+      <p class="subtitle">Send a test email using the current SMTP configuration.</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flash-list">
+          {% for category, message in messages %}
+            <li class="flash {{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('email_test') }}">
+      <label for="recipient">
+        Recipient Email
+        <input type="email" id="recipient" name="recipient" value="{{ recipient_email }}" required>
+      </label>
+
+      <p class="hint">The button sends a one-off test message so you can confirm the SMTP setup is working.</p>
+
+      <button type="submit">Send Test Email</button>
+    </form>
+
+    <div class="links">
+      <a href="{{ url_for('health_assessment') }}">Back to health assessment</a>
+      <a href="{{ url_for('index') }}">Home</a>
+    </div>
+  </main>
+</body>
+</html>

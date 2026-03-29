@@ -383,6 +383,45 @@ def _register_routes(app: Flask) -> None:
         flash("You have been logged out.", "success")
         return redirect(url_for("index"))
 
+    @app.route("/email-test", methods=["GET", "POST"])
+    def email_test():
+        """Render a simple page to send a test email using current SMTP settings."""
+        current_user = _get_current_user()
+        if not current_user:
+            flash("Please log in to test email delivery.", "error")
+            return redirect(url_for("login"))
+
+        recipient = current_user.email.strip().lower()
+
+        if request.method == "POST":
+            recipient = request.form.get("recipient", "").strip().lower() or recipient
+            if not recipient:
+                flash("Recipient email is required.", "error")
+                return render_template(
+                    "email.html",
+                    current_user=current_user,
+                    recipient_email=recipient,
+                ), 400
+
+            subject = "Bara-Kshaar SMTP test email"
+            body = (
+                "This is a test email from Bara-Kshaar.\n\n"
+                f"Sent at (UTC): {datetime.utcnow().isoformat(timespec='seconds')}\n"
+                f"Initiated by user: {current_user.username} ({current_user.email})"
+            )
+
+            sent = _send_email(subject, body, [recipient])
+            if sent:
+                flash(f"Test email sent to {recipient}.", "success")
+            else:
+                flash("SMTP send failed. Check Render mail settings and application logs.", "error")
+
+        return render_template(
+            "email.html",
+            current_user=current_user,
+            recipient_email=recipient,
+        )
+
     @app.route("/health-assessment", methods=["GET", "POST"])
     def health_assessment():
         """Health assessment form to collect user health information."""

@@ -478,6 +478,19 @@
       color: #56656f;
       padding: 2rem 0;
     }
+    .aux-link {
+      margin-top: 1rem;
+      text-align: center;
+      font-size: 0.92rem;
+    }
+    .aux-link a {
+      color: #2e6786;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .aux-link a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body data-current-user="{{ 'true' if current_user else 'false' }}">
@@ -710,6 +723,10 @@
           <a href="{{ url_for('login') }}">Login</a> or <a href="{{ url_for('register') }}">register</a> to book appointments.
         </p>
       {% endif %}
+
+      <p class="aux-link">
+        <a href="{{ url_for('email_test') }}">Test email setup</a>
+      </p>
     </div>
 
     <div class="footer-links">
