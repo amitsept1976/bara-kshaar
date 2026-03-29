@@ -180,6 +180,26 @@
         {% endfor %}
       </datalist>
     </div>
+
+    {% if query %}
+      <p class="muted">
+        Showing results for: <strong>{{ query }}</strong>
+      </p>
+    {% endif %}
+
+    {% if remedies %}
+      {% for r in remedies %}
+        <div class="card">
+          <h2>{{ r.name }} - {{ r.full_name }}</h2>
+          {% if r.description %}
+            <p>{{ r.description }}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% elif query %}
+      <p>No remedies found. Try different words or simpler terms.</p>
+    {% endif %}
+
 <section class="schuessler-salts">
   <h1>The 12 Schüßler Cell Salts</h1>
   <p>
@@ -291,24 +311,6 @@
   </p>
 </section>
 
-    {% if query %}
-      <p class="muted">
-        Showing results for: <strong>{{ query }}</strong>
-      </p>
-    {% endif %}
-
-    {% if remedies %}
-      {% for r in remedies %}
-        <div class="card">
-          <h2>{{ r.name }} – {{ r.full_name }}</h2>
-          {% if r.description %}
-            <p>{{ r.description }}</p>
-          {% endif %}
-        </div>
-      {% endfor %}
-    {% elif query %}
-      <p>No remedies found. Try different words or simpler terms.</p>
-    {% endif %}
   </div>
 </body>
 </html>
