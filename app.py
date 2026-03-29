@@ -410,11 +410,11 @@ def _register_routes(app: Flask) -> None:
                 f"Initiated by user: {current_user.username} ({current_user.email})"
             )
 
-            sent = _send_email(subject, body, [recipient])
+            sent, detail = _send_email_detailed(subject, body, [recipient])
             if sent:
                 flash(f"Test email sent to {recipient}.", "success")
             else:
-                flash("SMTP send failed. Check Render mail settings and application logs.", "error")
+                flash(detail, "error")
 
         return render_template(
             "email.html",
@@ -734,11 +734,11 @@ def _register_routes(app: Flask) -> None:
             f"Authorized via: {reason}"
         )
 
-        sent = _send_email(subject, body, [recipient])
+        sent, detail = _send_email_detailed(subject, body, [recipient])
         if not sent:
             return {
                 "success": False,
-                "message": "SMTP send failed. Check logs for provider/auth details.",
+                "message": detail,
                 "recipient": recipient,
             }, 502
 
@@ -782,8 +782,28 @@ def _run_notification_in_background(task_name: str, task: Callable[..., None], *
     threading.Thread(target=_runner, name=f"notify-{task_name}", daemon=True).start()
 
 
-def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
-    """Send an email using SMTP settings from app config."""
+def _format_smtp_failure_message(exception: Exception) -> str:
+    """Return a concise SMTP failure message with common remediation hints."""
+    message = str(exception).strip() or exception.__class__.__name__
+
+    if isinstance(exception, smtplib.SMTPAuthenticationError):
+        return (
+            "SMTP authentication failed. For Gmail, use a Google App Password, "
+            "enable 2-Step Verification, and set MAIL_USE_TLS=True with MAIL_PORT=587. "
+            f"Provider said: {message}"
+        )
+    if isinstance(exception, TimeoutError):
+        return "SMTP connection timed out. Verify Render outbound access, host, port, and TLS/SSL settings."
+    if isinstance(exception, OSError):
+        return f"SMTP network error: {message}. Verify host, port, and provider connectivity from Render."
+    if isinstance(exception, smtplib.SMTPException):
+        return f"SMTP provider error: {message}"
+
+    return message
+
+
+def _send_email_detailed(subject: str, body: str, recipients: list[str]) -> tuple[bool, str]:
+    """Send an email using SMTP settings from app config and return detailed status."""
     mail_settings = _get_mail_settings(current_app.config)
     mail_server = str(mail_settings["mail_server"])
     mail_port = int(mail_settings["mail_port"])
@@ -794,15 +814,16 @@ def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
     mail_from = str(mail_settings["mail_from"])
 
     if not mail_settings["is_configured"]:
+        missing_summary = ", ".join(mail_settings["missing"])
         logger.warning(
             "Skipping email because mail configuration is incomplete (%s). Subject: %s",
-            ", ".join(mail_settings["missing"]),
+            missing_summary,
             subject,
         )
-        return False
+        return False, f"Mail configuration is incomplete: {missing_summary}"
     if not recipients:
         logger.warning("Skipping email (no recipients). Subject: %s", subject)
-        return False
+        return False, "No recipient email address was provided."
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -829,10 +850,16 @@ def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
                 smtp.send_message(msg, from_addr=mail_from, to_addrs=recipients)
     except Exception as e:
         logger.error("Failed to send email '%s': %s", subject, e, exc_info=True)
-        return False
+        return False, _format_smtp_failure_message(e)
 
     logger.info("Email sent successfully. Subject: %s, Recipients: %s", subject, recipients)
-    return True
+    return True, "Email sent successfully."
+
+
+def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
+    """Send an email using SMTP settings from app config."""
+    sent, _ = _send_email_detailed(subject, body, recipients)
+    return sent
 
 
 def _send_user_and_admin_emails(
