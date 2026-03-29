@@ -475,23 +475,6 @@
           {% else %}
             <p class="salt-row">No salts could be derived from the submitted text.</p>
           {% endif %}
-
-          <p class="salt-row"><strong>Ranked Remedies (best match first):</strong></p>
-          {% if all_ranked_remedies %}
-            <ol class="remedy-rank-list">
-              {% for remedy in all_ranked_remedies %}
-                <li class="remedy-rank-item">
-                  <strong>{{ remedy.name }}</strong>
-                  (score {{ remedy.score }})
-                  {% if remedy.salts %}
-                    - {{ remedy.salts|join(', ') }}
-                  {% endif %}
-                </li>
-              {% endfor %}
-            </ol>
-          {% else %}
-            <p class="salt-row">No remedies could be ranked from the submitted text.</p>
-          {% endif %}
         </div>
       {% endif %}
       <form method="post" action="{{ url_for('health_assessment') }}">
