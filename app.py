@@ -456,14 +456,6 @@ def _register_routes(app: Flask) -> None:
                 remedy_recommended_salts,
             )
 
-            if deficient_salt:
-                flash(
-                    f"Derived deficient salt from birth month {month}: {deficient_salt}.",
-                    "success",
-                )
-            else:
-                flash("Could not derive deficient salt from the provided date of birth.", "error")
-
             if all_recommended_salts:
                 flash("Generated salt recommendations from your ailments and family history.", "success")
             else:
