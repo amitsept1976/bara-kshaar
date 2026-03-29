@@ -1,6 +1,8 @@
 import logging
+import errno
 import re
 import secrets
+import socket
 import ssl
 import smtplib
 import threading
@@ -802,6 +804,89 @@ def _format_smtp_failure_message(exception: Exception) -> str:
     return message
 
 
+def _is_network_unreachable_error(exception: Exception) -> bool:
+    """Return True when the SMTP connect failure looks like a routing/connectivity issue."""
+    if isinstance(exception, OSError) and exception.errno in {errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN}:
+        return True
+
+    return "network is unreachable" in str(exception).strip().lower()
+
+
+def _create_ipv4_socket(host: str, port: int, timeout: float | None) -> socket.socket:
+    """Create an IPv4 socket connection for SMTP when dual-stack routing is unreliable."""
+    last_error: OSError | None = None
+
+    for family, socktype, proto, _, sockaddr in socket.getaddrinfo(
+        host,
+        port,
+        socket.AF_INET,
+        socket.SOCK_STREAM,
+    ):
+        sock = socket.socket(family, socktype, proto)
+        try:
+            if timeout is not None:
+                sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as e:
+            last_error = e
+            sock.close()
+
+    if last_error is not None:
+        raise last_error
+
+    raise OSError(f"Could not resolve an IPv4 address for SMTP host '{host}'.")
+
+
+class _IPv4SMTP(smtplib.SMTP):
+    """SMTP client that forces IPv4 for environments without working IPv6."""
+
+    def _get_socket(self, host: str, port: int, timeout: float) -> socket.socket:
+        if self.debuglevel > 0:
+            self._print_debug("connect:", (host, port))
+        return _create_ipv4_socket(host, port, timeout)
+
+
+class _IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    """SMTP_SSL client that forces IPv4 for environments without working IPv6."""
+
+    def _get_socket(self, host: str, port: int, timeout: float) -> socket.socket:
+        if self.debuglevel > 0:
+            self._print_debug("connect:", (host, port))
+        raw_socket = _create_ipv4_socket(host, port, timeout)
+        server_hostname = host if ssl.HAS_SNI else None
+        return self.context.wrap_socket(raw_socket, server_hostname=server_hostname)
+
+
+def _deliver_smtp_message(
+    smtp_factory: type[smtplib.SMTP],
+    mail_server: str,
+    mail_port: int,
+    timeout: int,
+    mail_use_tls: bool,
+    mail_username: str,
+    mail_password: str,
+    msg: EmailMessage,
+    mail_from: str,
+    recipients: list[str],
+    ssl_context: ssl.SSLContext,
+) -> None:
+    """Open an SMTP connection and deliver a prepared message."""
+    smtp_kwargs: dict[str, object] = {"timeout": timeout}
+    if smtp_factory is _IPv4SMTP_SSL or smtp_factory is smtplib.SMTP_SSL:
+        smtp_kwargs["context"] = ssl_context
+
+    with smtp_factory(mail_server, mail_port, **smtp_kwargs) as smtp:
+        if smtp_factory is not _IPv4SMTP_SSL and smtp_factory is not smtplib.SMTP_SSL:
+            smtp.ehlo()
+            if mail_use_tls:
+                smtp.starttls(context=ssl_context)
+                smtp.ehlo()
+        if mail_username and mail_password:
+            smtp.login(mail_username, mail_password)
+        smtp.send_message(msg, from_addr=mail_from, to_addrs=recipients)
+
+
 def _send_email_detailed(subject: str, body: str, recipients: list[str]) -> tuple[bool, str]:
     """Send an email using SMTP settings from app config and return detailed status."""
     mail_settings = _get_mail_settings(current_app.config)
@@ -835,20 +920,71 @@ def _send_email_detailed(subject: str, body: str, recipients: list[str]) -> tupl
     try:
         ssl_context = ssl.create_default_context()
         if mail_use_ssl:
-            with smtplib.SMTP_SSL(mail_server, mail_port, timeout=15, context=ssl_context) as smtp:
-                if mail_username and mail_password:
-                    smtp.login(mail_username, mail_password)
-                smtp.send_message(msg, from_addr=mail_from, to_addrs=recipients)
+            _deliver_smtp_message(
+                smtplib.SMTP_SSL,
+                mail_server,
+                mail_port,
+                15,
+                mail_use_tls,
+                mail_username,
+                mail_password,
+                msg,
+                mail_from,
+                recipients,
+                ssl_context,
+            )
         else:
-            with smtplib.SMTP(mail_server, mail_port, timeout=15) as smtp:
-                smtp.ehlo()
-                if mail_use_tls:
-                    smtp.starttls(context=ssl_context)
-                    smtp.ehlo()
-                if mail_username and mail_password:
-                    smtp.login(mail_username, mail_password)
-                smtp.send_message(msg, from_addr=mail_from, to_addrs=recipients)
+            _deliver_smtp_message(
+                smtplib.SMTP,
+                mail_server,
+                mail_port,
+                15,
+                mail_use_tls,
+                mail_username,
+                mail_password,
+                msg,
+                mail_from,
+                recipients,
+                ssl_context,
+            )
     except Exception as e:
+        if _is_network_unreachable_error(e):
+            logger.warning(
+                "SMTP connection to %s:%s failed with network routing error; retrying with IPv4-only.",
+                mail_server,
+                mail_port,
+            )
+            try:
+                ssl_context = ssl.create_default_context()
+                smtp_factory: type[smtplib.SMTP] = _IPv4SMTP_SSL if mail_use_ssl else _IPv4SMTP
+                _deliver_smtp_message(
+                    smtp_factory,
+                    mail_server,
+                    mail_port,
+                    15,
+                    mail_use_tls,
+                    mail_username,
+                    mail_password,
+                    msg,
+                    mail_from,
+                    recipients,
+                    ssl_context,
+                )
+                logger.info(
+                    "Email sent successfully after IPv4-only SMTP retry. Subject: %s, Recipients: %s",
+                    subject,
+                    recipients,
+                )
+                return True, "Email sent successfully."
+            except Exception as retry_error:
+                logger.error(
+                    "IPv4-only SMTP retry failed for '%s': %s",
+                    subject,
+                    retry_error,
+                    exc_info=True,
+                )
+                return False, _format_smtp_failure_message(retry_error)
+
         logger.error("Failed to send email '%s': %s", subject, e, exc_info=True)
         return False, _format_smtp_failure_message(e)
 
