@@ -3,9 +3,10 @@ import re
 import secrets
 import ssl
 import smtplib
+import threading
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
-from typing import TypedDict
+from typing import Callable, TypedDict
 
 from flask import Flask, current_app, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import or_, text
@@ -538,7 +539,17 @@ def _register_routes(app: Flask) -> None:
             db.session.add(appointment)
             db.session.commit()
             logger.info(f"Appointment created for user {current_user.username}: {apt_date} at {time_str}")
-            _send_appointment_created_notifications(current_user, appointment)
+
+            _run_notification_in_background(
+                "appointment-created",
+                _send_appointment_created_notifications_payload,
+                current_user.username,
+                current_user.email,
+                appointment.id,
+                appointment.appointment_date,
+                appointment.appointment_time,
+                appointment.notes,
+            )
             return {"success": True, "appointment": appointment.to_dict()}
         except Exception as e:
             db.session.rollback()
@@ -576,12 +587,19 @@ def _register_routes(app: Flask) -> None:
 
             db.session.commit()
             logger.info(f"Appointment {appointment_id} updated for user {current_user.username}")
-            _send_appointment_updated_notifications(
-                current_user,
-                appointment,
+
+            _run_notification_in_background(
+                "appointment-updated",
+                _send_appointment_updated_notifications_payload,
+                current_user.username,
+                current_user.email,
+                appointment.id,
                 old_date,
                 old_time,
                 old_notes,
+                appointment.appointment_date,
+                appointment.appointment_time,
+                appointment.notes,
             )
             return {"success": True, "appointment": appointment.to_dict()}
         except Exception as e:
@@ -608,8 +626,12 @@ def _register_routes(app: Flask) -> None:
             db.session.delete(appointment)
             db.session.commit()
             logger.info(f"Appointment {appointment_id} deleted for user {current_user.username}")
-            _send_appointment_deleted_notifications(
-                current_user,
+
+            _run_notification_in_background(
+                "appointment-deleted",
+                _send_appointment_deleted_notifications_payload,
+                current_user.username,
+                current_user.email,
                 appointment_id,
                 deleted_date,
                 deleted_time,
@@ -692,6 +714,20 @@ def _build_email_recipients(user_email: str | None = None) -> tuple[list[str], s
         recipients.append(normalized)
 
     return recipients, admin_email
+
+
+def _run_notification_in_background(task_name: str, task: Callable[..., None], *args: object) -> None:
+    """Run non-critical email work in a background thread to avoid blocking API responses."""
+    app = current_app._get_current_object()
+
+    def _runner() -> None:
+        with app.app_context():
+            try:
+                task(*args)
+            except Exception as e:
+                logger.error("Background task '%s' failed: %s", task_name, e, exc_info=True)
+
+    threading.Thread(target=_runner, name=f"notify-{task_name}", daemon=True).start()
 
 
 def _send_email(subject: str, body: str, recipients: list[str]) -> bool:
@@ -830,6 +866,37 @@ def _send_appointment_created_notifications(user: User, appointment: Appointment
     _send_user_and_admin_emails(user.email, user_subject, user_body, admin_subject, admin_body)
 
 
+def _send_appointment_created_notifications_payload(
+    username: str,
+    user_email: str,
+    appointment_id: int,
+    appointment_date: date,
+    appointment_time: str,
+    notes: str | None,
+) -> None:
+    """Send appointment-created notifications from scalar payload data."""
+    details = _format_appointment_details(appointment_date, appointment_time, notes)
+
+    user_subject = "Appointment booked successfully"
+    user_body = (
+        f"Hello {username},\n\n"
+        "Your appointment has been booked.\n\n"
+        f"{details}\n\n"
+        "Regards,\n"
+        "Bara-Kshaar Team"
+    )
+
+    admin_subject = f"New appointment booked by {username}"
+    admin_body = (
+        "A new appointment has been created.\n\n"
+        f"User: {username} ({user_email})\n"
+        f"Appointment ID: {appointment_id}\n"
+        f"{details}"
+    )
+
+    _send_user_and_admin_emails(user_email, user_subject, user_body, admin_subject, admin_body)
+
+
 def _send_appointment_updated_notifications(
     user: User,
     appointment: Appointment,
@@ -871,6 +938,47 @@ def _send_appointment_updated_notifications(
     _send_user_and_admin_emails(user.email, user_subject, user_body, admin_subject, admin_body)
 
 
+def _send_appointment_updated_notifications_payload(
+    username: str,
+    user_email: str,
+    appointment_id: int,
+    old_date: date,
+    old_time: str,
+    old_notes: str | None,
+    new_date: date,
+    new_time: str,
+    new_notes: str | None,
+) -> None:
+    """Send appointment-updated notifications from scalar payload data."""
+    old_details = _format_appointment_details(old_date, old_time, old_notes)
+    new_details = _format_appointment_details(new_date, new_time, new_notes)
+
+    user_subject = "Appointment updated successfully"
+    user_body = (
+        f"Hello {username},\n\n"
+        "Your appointment has been updated.\n\n"
+        "Previous details:\n"
+        f"{old_details}\n\n"
+        "Updated details:\n"
+        f"{new_details}\n\n"
+        "Regards,\n"
+        "Bara-Kshaar Team"
+    )
+
+    admin_subject = f"Appointment updated by {username}"
+    admin_body = (
+        "An appointment has been updated.\n\n"
+        f"User: {username} ({user_email})\n"
+        f"Appointment ID: {appointment_id}\n\n"
+        "Previous details:\n"
+        f"{old_details}\n\n"
+        "Updated details:\n"
+        f"{new_details}"
+    )
+
+    _send_user_and_admin_emails(user_email, user_subject, user_body, admin_subject, admin_body)
+
+
 def _send_appointment_deleted_notifications(
     user: User,
     appointment_id: int,
@@ -899,6 +1007,37 @@ def _send_appointment_deleted_notifications(
     )
 
     _send_user_and_admin_emails(user.email, user_subject, user_body, admin_subject, admin_body)
+
+
+def _send_appointment_deleted_notifications_payload(
+    username: str,
+    user_email: str,
+    appointment_id: int,
+    deleted_date: date,
+    deleted_time: str,
+    deleted_notes: str | None,
+) -> None:
+    """Send appointment-deleted notifications from scalar payload data."""
+    deleted_details = _format_appointment_details(deleted_date, deleted_time, deleted_notes)
+
+    user_subject = "Appointment deleted"
+    user_body = (
+        f"Hello {username},\n\n"
+        "Your appointment has been deleted.\n\n"
+        f"Deleted appointment details:\n{deleted_details}\n\n"
+        "Regards,\n"
+        "Bara-Kshaar Team"
+    )
+
+    admin_subject = f"Appointment deleted by {username}"
+    admin_body = (
+        "An appointment has been deleted.\n\n"
+        f"User: {username} ({user_email})\n"
+        f"Appointment ID: {appointment_id}\n"
+        f"Deleted appointment details:\n{deleted_details}"
+    )
+
+    _send_user_and_admin_emails(user_email, user_subject, user_body, admin_subject, admin_body)
 
 
 def _send_next_day_appointment_reminders() -> dict[str, int]:
